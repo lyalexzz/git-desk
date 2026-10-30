@@ -1,0 +1,62 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+.app-logo {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1677ff;
+}
+
+.pre-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
+}
+
+.diff-view,
+.job-log {
+  margin: 0;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+}
+
+.diff-view {
+  max-height: 480px;
+}
+
+.diff-add {
+  background: #e6ffec;
+}
+
+.diff-del {
+  background: #ffebe9;
+}
+
+.diff-hunk {
+  color: #8c8c8c;
+  background: #f0f5ff;
+}
+
+.job-log {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  height: 60vh;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.clickable {
+  cursor: pointer;
+}
