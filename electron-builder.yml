@@ -1,13 +1,26 @@
 appId: com.gitlabdesk.app
-productName: GitLab 桌面版
+productName: Git 桌面端
+# 安装目录和快捷方式沿用产品名；exe 用 ASCII，避免 NSIS 在中文路径上出错
+executableName: gitlab-desk
+asar: true
+npmRebuild: false
 directories:
   output: dist
 files:
   - out/**/*
   - package.json
+  - "!**/*.map"
+  - "!**/*.tsbuildinfo"
 win:
+  executableName: gitlab-desk
+  artifactName: gitlab-desk-${version}-setup.${ext}
   target:
     - nsis
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Git 桌面端
+  unicode: true

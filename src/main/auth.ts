@@ -200,10 +200,11 @@ export function loginWithWeb(parent: BrowserWindow | null): Promise<LoginResult>
     modal: Boolean(parent),
     width: 960,
     height: 780,
-    title: cfg.isJihu ? '登录极狐 GitLab' : '登录 GitLab',
+    title: 'Git 桌面端 · 登录',
     autoHideMenuBar: true,
     webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
+  win.on('page-title-updated', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   return new Promise((resolve) => {

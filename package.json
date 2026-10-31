@@ -1,7 +1,7 @@
 {
   "name": "gitlab-desk",
   "version": "0.1.0",
-  "description": "GitLab 中文桌面客户端",
+  "description": "Git 桌面端（支持 GitLab / 极狐，后续对接云效、码云、GitHub）",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {

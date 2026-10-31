@@ -24,7 +24,7 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     autoHideMenuBar: true,
-    title: 'GitLab 桌面版',
+    title: 'Git 桌面端',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

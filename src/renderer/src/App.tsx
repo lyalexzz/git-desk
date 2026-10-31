@@ -47,7 +47,7 @@ function MainLayout({ config }: { config: AppConfig }) {
   return (
     <Layout style={{ height: '100vh' }}>
       <Sider theme="light" width={200} style={{ borderRight: '1px solid #f0f0f0' }}>
-        <div className="app-logo">{productName} 桌面版</div>
+        <div className="app-logo">Git 桌面端</div>
         <Menu
           mode="inline"
           selectedKeys={[selected]}
