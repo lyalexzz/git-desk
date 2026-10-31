@@ -6,8 +6,19 @@ export const platforms: { value: Platform; label: string; url?: string }[] = [
   { value: 'gitlab', label: 'GitLab 私有部署' },
   { value: 'jihu', label: '极狐 GitLab 私有部署' },
   { value: 'jihulab', label: '极狐 GitLab SaaS（jihulab.com）', url: 'https://jihulab.com' },
-  { value: 'gitlab_com', label: 'GitLab.com', url: 'https://gitlab.com' }
+  { value: 'gitlab_com', label: 'GitLab.com', url: 'https://gitlab.com' },
+  { value: 'github', label: 'GitHub', url: 'https://github.com' }
 ]
+
+export function productName(platform: Platform, isJihu?: boolean): string {
+  if (platform === 'github') return 'GitHub'
+  if (isJihu || platform === 'jihu' || platform === 'jihulab') return '极狐 GitLab'
+  return 'GitLab'
+}
+
+export function mrLabel(provider: 'gitlab' | 'github'): string {
+  return provider === 'github' ? 'Pull Request' : '合并请求'
+}
 
 export const authMethodText: Record<AuthMethod, string> = {
   token: '个人访问令牌',

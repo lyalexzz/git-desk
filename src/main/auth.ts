@@ -1,11 +1,20 @@
 import { BrowserWindow, session } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
-import { getAuth, getConfig, getOAuthClient, setAuth, type AuthState } from './config'
+import { getAuth, getConfig, getOAuthClient, providerOf, setAuth, upsertLoggedInAccount, type AuthState } from './config'
+import { githubApiRoot } from './github'
 import { httpRequest, networkError, parseJson } from './http'
-import type { LoginResult } from '../shared/types'
+import type { LoginResult, Platform } from '../shared/types'
 
 export const OAUTH_REDIRECT_URI = 'http://localhost/gitlab-desk/oauth/callback'
 export const LOGIN_PARTITION = 'persist:gitlab-login'
+
+export interface LoginServer {
+  platform: Platform
+  baseUrl: string
+  ignoreTls: boolean
+  oauthClientId?: string
+  oauthSecret?: string
+}
 
 interface TokenResponse {
   access_token: string
@@ -39,20 +48,40 @@ function oauthError(status: number, data: unknown, ctx: OAuthContext): string {
   return `登录失败（HTTP ${status}）${detail ? '：' + detail : ''}`
 }
 
-async function tokenRequest(params: Record<string, string>, ctx: OAuthContext): Promise<TokenResponse> {
+function resolveServer(server?: LoginServer): LoginServer {
+  if (server?.baseUrl) {
+    return {
+      platform: server.platform,
+      baseUrl: server.baseUrl.replace(/\/+$/, ''),
+      ignoreTls: Boolean(server.ignoreTls),
+      oauthClientId: server.oauthClientId,
+      oauthSecret: server.oauthSecret
+    }
+  }
   const cfg = getConfig()
+  return {
+    platform: cfg.platform,
+    baseUrl: cfg.baseUrl,
+    ignoreTls: cfg.ignoreTls,
+    oauthClientId: cfg.oauthClientId
+  }
+}
+
+async function tokenRequest(params: Record<string, string>, ctx: OAuthContext, server: LoginServer): Promise<TokenResponse> {
   const { clientId, clientSecret } = getOAuthClient()
   const body = new URLSearchParams(params)
-  if (clientId) body.set('client_id', clientId)
-  if (clientSecret) body.set('client_secret', clientSecret)
+  const id = server.oauthClientId || clientId
+  const secret = server.oauthSecret || clientSecret
+  if (id) body.set('client_id', id)
+  if (secret) body.set('client_secret', secret)
 
   let res
   try {
-    res = await httpRequest(new URL(cfg.baseUrl + '/oauth/token'), {
+    res = await httpRequest(new URL(server.baseUrl + '/oauth/token'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
       body: body.toString(),
-      ignoreTls: cfg.ignoreTls
+      ignoreTls: server.ignoreTls
     })
   } catch (e) {
     throw new Error(networkError(e as NodeJS.ErrnoException))
@@ -84,7 +113,8 @@ export function refreshOAuth(): Promise<AuthState | null> {
     try {
       const t = await tokenRequest(
         { grant_type: 'refresh_token', refresh_token: auth.refreshToken, redirect_uri: OAUTH_REDIRECT_URI },
-        'refresh'
+        'refresh',
+        resolveServer()
       )
       const next = toAuth(t, auth.method)
       setAuth(next)
@@ -111,7 +141,7 @@ export function authHeaders(auth: AuthState): Record<string, string> {
   return auth.type === 'pat' ? { 'PRIVATE-TOKEN': auth.token } : { Authorization: `Bearer ${auth.accessToken}` }
 }
 
-/** 忽略证书只作用于当前 GitLab 主机；其它站点仍走系统校验。未开启时恢复默认 */
+/** 忽略证书只作用于当前主机；其它站点仍走系统校验。未开启时恢复默认 */
 export function applyCertificatePolicy(ses: Electron.Session): void {
   const cfg = getConfig()
   if (!cfg.ignoreTls || !cfg.baseUrl) {
@@ -130,54 +160,95 @@ export function applyCertificatePolicy(ses: Electron.Session): void {
   })
 }
 
-/** 用新的登录凭证调用 /user 校验，成功才保存 */
-async function finishLogin(auth: AuthState): Promise<LoginResult> {
-  const cfg = getConfig()
+/** 用新的登录凭证调用 /user 校验，成功才写入 accounts */
+async function finishLogin(auth: AuthState, server: LoginServer): Promise<LoginResult> {
+  const provider = providerOf(server.platform)
+  let apiRoot: string
+  try {
+    apiRoot = provider === 'github' ? githubApiRoot(server.baseUrl) : server.baseUrl + '/api/v4'
+  } catch {
+    return { ok: false, error: '服务器地址格式不正确' }
+  }
+
+  const headers: Record<string, string> =
+    provider === 'github'
+      ? {
+          Authorization: `Bearer ${auth.type === 'pat' ? auth.token : auth.accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      : { ...authHeaders(auth), Accept: 'application/json' }
+
   const call = (path: string) =>
-    httpRequest(new URL(cfg.baseUrl + '/api/v4' + path), {
-      headers: { ...authHeaders(auth), Accept: 'application/json' },
-      ignoreTls: cfg.ignoreTls
+    httpRequest(new URL(apiRoot + path), {
+      headers,
+      ignoreTls: server.ignoreTls
     })
+
   try {
     const res = await call('/user')
-    const user = parseJson(res) as { name?: string; username?: string; message?: string }
+    const raw = parseJson(res) as { name?: string | null; username?: string; login?: string; message?: string }
     if (res.status === 401) return { ok: false, error: '令牌无效、已过期或已被撤销' }
-    if (res.status === 403) return { ok: false, error: '令牌权限不足，请确认勾选了 api 权限范围' }
-    if (res.status >= 400 || !user?.username) return { ok: false, error: `校验登录失败（HTTP ${res.status}）` }
+    if (res.status === 403) {
+      return {
+        ok: false,
+        error: provider === 'github' ? '令牌权限不足，请确认勾选了 repo、read:user' : '令牌权限不足，请确认勾选了 api 权限范围'
+      }
+    }
+    const username = raw.username || raw.login
+    if (res.status >= 400 || !username) return { ok: false, error: `校验登录失败（HTTP ${res.status}）` }
 
     let version = ''
-    try {
-      const v = parseJson(await call('/version')) as { version?: string }
-      version = v?.version ?? ''
-    } catch {
-      // 版本号只用于展示
+    if (provider === 'gitlab') {
+      try {
+        const v = parseJson(await call('/version')) as { version?: string }
+        version = v?.version ?? ''
+      } catch {
+        // 版本号只用于展示
+      }
     }
-    setAuth(auth, version)
-    return { ok: true, user: { name: user.name ?? user.username, username: user.username } }
+
+    const label = (raw.name || username).trim()
+    upsertLoggedInAccount({
+      platform: server.platform,
+      baseUrl: server.baseUrl,
+      ignoreTls: server.ignoreTls,
+      oauthClientId: server.oauthClientId,
+      oauthSecret: server.oauthSecret,
+      auth,
+      serverVersion: version,
+      label,
+      username
+    })
+    return { ok: true, user: { name: label, username } }
   } catch (e) {
     return { ok: false, error: networkError(e as NodeJS.ErrnoException) }
   }
 }
 
-function checkServer(): string | null {
-  const cfg = getConfig()
-  if (!cfg.baseUrl) return '请先填写 GitLab 服务器地址'
+function checkServer(server: LoginServer): string | null {
+  if (!server.baseUrl) return '请先填写服务器地址'
   return null
 }
 
-export async function loginWithToken(token: string): Promise<LoginResult> {
-  const err = checkServer()
+export async function loginWithToken(token: string, serverInput?: LoginServer): Promise<LoginResult> {
+  const server = resolveServer(serverInput)
+  const err = checkServer(server)
   if (err) return { ok: false, error: err }
   if (!token.trim()) return { ok: false, error: '请填写访问令牌' }
-  return finishLogin({ type: 'pat', token: token.trim() })
+  return finishLogin({ type: 'pat', token: token.trim() }, server)
 }
 
-export async function loginWithPassword(username: string, password: string): Promise<LoginResult> {
-  const err = checkServer()
+export async function loginWithPassword(username: string, password: string, serverInput?: LoginServer): Promise<LoginResult> {
+  const server = resolveServer(serverInput)
+  const err = checkServer(server)
   if (err) return { ok: false, error: err }
+  if (providerOf(server.platform) === 'github') {
+    return { ok: false, error: 'GitHub 暂不支持账号密码登录，请使用个人访问令牌（PAT）' }
+  }
   try {
-    const t = await tokenRequest({ grant_type: 'password', username, password, scope: 'api' }, 'password')
-    return finishLogin(toAuth(t, 'password'))
+    const t = await tokenRequest({ grant_type: 'password', username, password, scope: 'api' }, 'password', server)
+    return finishLogin(toAuth(t, 'password'), server)
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
@@ -188,21 +259,25 @@ function base64url(buf: Buffer): string {
 }
 
 /** 弹出 GitLab 自带的登录页（支持双因素、LDAP、手机号等），授权码 + PKCE 换取令牌 */
-export function loginWithWeb(parent: BrowserWindow | null): Promise<LoginResult> {
-  const err = checkServer()
+export function loginWithWeb(parent: BrowserWindow | null, serverInput?: LoginServer): Promise<LoginResult> {
+  const server = resolveServer(serverInput)
+  const err = checkServer(server)
   if (err) return Promise.resolve({ ok: false, error: err })
-  const cfg = getConfig()
+  if (providerOf(server.platform) === 'github') {
+    return Promise.resolve({ ok: false, error: 'GitHub 网页 OAuth 尚未接入，请使用个人访问令牌（PAT）' })
+  }
   const { clientId } = getOAuthClient()
-  if (!clientId) {
+  const appId = server.oauthClientId || clientId
+  if (!appId) {
     return Promise.resolve({ ok: false, error: '网页登录需要先在“高级设置”中填写 OAuth 应用 ID' })
   }
 
   const verifier = base64url(randomBytes(48))
   const challenge = base64url(createHash('sha256').update(verifier).digest())
   const state = base64url(randomBytes(16))
-  const authUrl = new URL(cfg.baseUrl + '/oauth/authorize')
+  const authUrl = new URL(server.baseUrl + '/oauth/authorize')
   authUrl.search = new URLSearchParams({
-    client_id: clientId,
+    client_id: appId,
     redirect_uri: OAUTH_REDIRECT_URI,
     response_type: 'code',
     state,
@@ -254,9 +329,10 @@ export function loginWithWeb(parent: BrowserWindow | null): Promise<LoginResult>
       win.hide()
       tokenRequest(
         { grant_type: 'authorization_code', code, redirect_uri: OAUTH_REDIRECT_URI, code_verifier: verifier },
-        'code'
+        'code',
+        server
       )
-        .then((t) => finishLogin(toAuth(t, 'web')))
+        .then((t) => finishLogin(toAuth(t, 'web'), server))
         .catch((e2: Error) => ({ ok: false as const, error: e2.message }))
         .then(finish)
     }

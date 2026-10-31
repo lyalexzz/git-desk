@@ -27,10 +27,11 @@ import { ArrowLeftOutlined, CopyOutlined, FileOutlined, FolderFilled, LinkOutlin
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { del, get, getAll, getPage, openExternal, post, useAction } from '../api'
-import { TimeAgo, visibilityText } from '../labels'
+import { TimeAgo, mrLabel, visibilityText } from '../labels'
 import CodeView from '../components/CodeView'
 import DiffList from '../components/DiffList'
 import Markdown from '../components/Markdown'
+import ProjectMembersPanel from '../components/ProjectMembersPanel'
 import ProjectSettings from '../components/ProjectSettings'
 import RollbackModal, { RevertCommitModal } from '../components/RollbackModal'
 import CloneButton from '../components/CloneModal'
@@ -841,6 +842,9 @@ export default function ProjectDetailPage() {
   const { id } = useParams()
   const projectId = Number(id)
   const [params, setParams] = useSearchParams()
+  const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
+  const caps = cfg.data?.capabilities
+  const mrText = mrLabel(cfg.data?.provider || 'gitlab')
   const project = useQuery({
     queryKey: ['project', projectId],
     queryFn: ({ signal }) => get<Project>(`/projects/${projectId}`, undefined, signal)
@@ -889,30 +893,52 @@ export default function ProjectDetailPage() {
             <Popover trigger="click" title="克隆仓库" content={<CloneBox project={p} />}>
               <Button icon={<CopyOutlined />}>克隆</Button>
             </Popover>
-            <Button onClick={() => navigate(`/mrs?project=${p.id}`)}>合并请求</Button>
+            <Button onClick={() => navigate(`/mrs?project=${p.id}`)}>{mrText}</Button>
             <Button onClick={() => navigate(`/issues?project=${p.id}`)}>Issue</Button>
-            <Button onClick={() => navigate(`/pipelines?project=${p.id}`)}>流水线</Button>
+            {caps?.pipelines && <Button onClick={() => navigate(`/pipelines?project=${p.id}`)}>流水线</Button>}
+            {caps?.audit && <Button onClick={() => navigate(`/audit?project=${p.id}`)}>审计日志</Button>}
             <Button onClick={() => openExternal(p.web_url)}>网页</Button>
           </Space>
         </div>
       </Card>
 
       <Card>
-        {empty ? (
-          <Empty description="仓库还是空的，推送代码后即可在这里浏览" />
-        ) : (
-          <Tabs
-            activeKey={tab}
-            onChange={(k) => update({ tab: k })}
-            items={[
-              { key: 'code', label: '代码', children: <CodeTab project={p} refName={refName} path={path} type={type} update={update} /> },
-              { key: 'commits', label: '提交记录', children: <CommitsTab projectId={p.id} refName={refName} path={path} update={update} /> },
-              { key: 'branches', label: '分支', children: <BranchesTab project={p} refName={refName} update={update} /> },
-              { key: 'tags', label: '标签', children: <TagsTab projectId={p.id} update={update} /> },
-              { key: 'settings', label: '设置', children: <ProjectSettings project={p} /> }
-            ]}
-          />
-        )}
+        <Tabs
+          activeKey={empty && ['code', 'commits', 'branches', 'tags'].includes(tab) ? 'members' : tab}
+          onChange={(k) => update({ tab: k })}
+          items={[
+            {
+              key: 'code',
+              label: '代码',
+              disabled: empty,
+              children: empty ? (
+                <Empty description="仓库还是空的，推送代码后即可在这里浏览" />
+              ) : (
+                <CodeTab project={p} refName={refName} path={path} type={type} update={update} />
+              )
+            },
+            {
+              key: 'commits',
+              label: '提交记录',
+              disabled: empty,
+              children: <CommitsTab projectId={p.id} refName={refName} path={path} update={update} />
+            },
+            {
+              key: 'branches',
+              label: '分支',
+              disabled: empty,
+              children: <BranchesTab project={p} refName={refName} update={update} />
+            },
+            {
+              key: 'tags',
+              label: '标签',
+              disabled: empty,
+              children: <TagsTab projectId={p.id} update={update} />
+            },
+            { key: 'members', label: '成员', children: <ProjectMembersPanel projectId={p.id} /> },
+            caps?.projectSettings ? { key: 'settings', label: '设置', children: <ProjectSettings project={p} /> } : null
+          ].filter(Boolean) as { key: string; label: string; disabled?: boolean; children: React.ReactNode }[]}
+        />
       </Card>
     </Space>
   )

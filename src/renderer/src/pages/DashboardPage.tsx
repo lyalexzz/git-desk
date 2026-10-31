@@ -6,6 +6,7 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { getAll, getPage, useMe } from '../api'
 import ProjectSelect from '../components/ProjectSelect'
+import { mrLabel } from '../labels'
 import type { Commit, Project, UserEvent } from '../types'
 
 const DAYS = 30
@@ -43,17 +44,26 @@ export default function DashboardPage() {
   const username = me.data?.username
   const since = dayjs().subtract(DAYS, 'day').format('YYYY-MM-DD')
   const [projectId, setProjectId] = useState<number>()
+  const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
+  const isGithub = cfg.data?.provider === 'github'
+  const mrText = mrLabel(cfg.data?.provider || 'gitlab')
+  const caps = cfg.data?.capabilities
 
-  const toReview = useCount('review', '/merge_requests', { scope: 'all', state: 'opened', reviewer_username: username }, !!username)
+  const toReview = useCount(
+    'review',
+    '/merge_requests',
+    { scope: 'all', state: 'opened', reviewer_username: username },
+    !!username && !isGithub
+  )
   const myMrs = useCount('my-mrs', '/merge_requests', { scope: 'created_by_me', state: 'opened' })
   const myIssues = useCount('my-issues', '/issues', { scope: 'assigned_to_me', state: 'opened' })
-  const todos = useCount('todos', '/todos', { state: 'pending' })
+  const todos = useCount('todos', '/todos', { state: 'pending' }, Boolean(caps?.todos))
 
   const events = useQuery({
     queryKey: ['my-events', me.data?.id, since],
     queryFn: ({ signal }) =>
       getAll<UserEvent>(`/users/${me.data!.id}/events`, { after: dayjs(since).subtract(1, 'day').format('YYYY-MM-DD') }, undefined, signal),
-    enabled: !!me.data
+    enabled: !!me.data && !isGithub
   })
   const projects = useQuery({
     queryKey: ['membership-projects'],
@@ -63,7 +73,7 @@ export default function DashboardPage() {
     queryKey: ['project-commits', projectId, since],
     queryFn: ({ signal }) =>
       getAll<Commit>(`/projects/${projectId}/repository/commits`, { since: dayjs(since).toISOString(), all: true }, 10, signal),
-    enabled: projectId != null
+    enabled: projectId != null && !isGithub
   })
 
   const days = useMemo(
@@ -121,14 +131,57 @@ export default function DashboardPage() {
     }
   }, [commits.data])
 
+  if (isGithub) {
+    return (
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Row gutter={16}>
+          <Col span={8}>
+            <CountCard
+              title={`打开的 ${mrText}`}
+              value={myMrs.data}
+              loading={myMrs.isLoading}
+              onClick={() => navigate('/mrs?scope=created_by_me')}
+            />
+          </Col>
+          <Col span={8}>
+            <CountCard title="打开的 Issue" value={myIssues.data} loading={myIssues.isLoading} onClick={() => navigate('/issues')} />
+          </Col>
+          <Col span={8}>
+            <CountCard
+              title="我的仓库"
+              value={projects.data?.length ?? null}
+              loading={projects.isLoading}
+              onClick={() => navigate('/projects')}
+            />
+          </Col>
+        </Row>
+        <Card title="仓库">
+          {projects.isLoading ? (
+            <Spin />
+          ) : (projects.data ?? []).length === 0 ? (
+            <Empty description="暂无仓库" />
+          ) : (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {(projects.data ?? []).slice(0, 12).map((p) => (
+                <Card key={p.id} size="small" hoverable onClick={() => navigate(`/projects/${p.id}`)}>
+                  {p.path_with_namespace}
+                </Card>
+              ))}
+            </Space>
+          )}
+        </Card>
+      </Space>
+    )
+  }
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Row gutter={16}>
         <Col span={6}>
-          <CountCard title="待我审核的合并请求" value={toReview.data} loading={toReview.isLoading} onClick={() => navigate('/mrs?scope=review')} />
+          <CountCard title={`待我审核的${mrText}`} value={toReview.data} loading={toReview.isLoading} onClick={() => navigate('/mrs?scope=review')} />
         </Col>
         <Col span={6}>
-          <CountCard title="我发起的进行中合并请求" value={myMrs.data} loading={myMrs.isLoading} onClick={() => navigate('/mrs?scope=created_by_me')} />
+          <CountCard title={`我发起的进行中${mrText}`} value={myMrs.data} loading={myMrs.isLoading} onClick={() => navigate('/mrs?scope=created_by_me')} />
         </Col>
         <Col span={6}>
           <CountCard title="指派给我的未解决 Issue" value={myIssues.data} loading={myIssues.isLoading} onClick={() => navigate('/issues')} />

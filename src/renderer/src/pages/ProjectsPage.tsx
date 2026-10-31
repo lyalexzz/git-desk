@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Card, Input, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
+import { Button, Card, Input, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
 import { StarFilled, StarOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { get, getAll, getPage, openExternal, post, useAction } from '../api'
-import { TimeAgo, visibilityText } from '../labels'
+import CreateProjectModal from '../components/CreateProjectModal'
+import { TimeAgo, mrLabel, visibilityText } from '../labels'
 import type { Group, Project } from '../types'
 
 type Scope = 'membership' | 'starred' | 'all'
@@ -63,13 +64,18 @@ function GroupSelect({ value, onChange }: { value?: number; onChange: (v?: numbe
 export default function ProjectsPage() {
   const navigate = useNavigate()
   const run = useAction()
+  const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
+  const isGithub = cfg.data?.provider === 'github'
+  const caps = cfg.data?.capabilities
+  const mrText = mrLabel(cfg.data?.provider || 'gitlab')
   const [params, setParams] = useSearchParams()
-  const group = Number(params.get('group')) || undefined
+  const group = isGithub ? undefined : Number(params.get('group')) || undefined
   const [scope, setScope] = useState<Scope>('membership')
   const [input, setInput] = useState('')
   const search = useDebounced(input.trim())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => setPage(1), [search])
 
@@ -111,7 +117,8 @@ export default function ProjectsPage() {
   })
   const starred = useQuery({
     queryKey: ['starred-ids'],
-    queryFn: async ({ signal }) => new Set((await getAll<Project>('/projects', { starred: true, simple: true }, undefined, signal)).map((p) => p.id))
+    queryFn: async ({ signal }) => new Set((await getAll<Project>('/projects', { starred: true, simple: true }, undefined, signal)).map((p) => p.id)),
+    enabled: !isGithub
   })
 
   const toggleStar = (p: Project) => {
@@ -138,27 +145,34 @@ export default function ProjectsPage() {
     )
   }
 
+  const noun = isGithub ? '仓库' : '项目'
+
   return (
     <Card
-      title="项目"
+      title={noun}
       extra={
-        <Space>
-          <Segmented<Scope>
-            value={scope}
-            onChange={(v) => {
-              setScope(v)
-              setPage(1)
-            }}
-            options={[
-              { label: '我参与的', value: 'membership' },
-              { label: '我星标的', value: 'starred' },
-              { label: '全部可见', value: 'all' }
-            ]}
-          />
-          <GroupSelect value={group} onChange={setGroup} />
+        <Space wrap>
+          <Button type="primary" onClick={() => setCreating(true)}>
+            新建{noun}
+          </Button>
+          {!isGithub && (
+            <Segmented<Scope>
+              value={scope}
+              onChange={(v) => {
+                setScope(v)
+                setPage(1)
+              }}
+              options={[
+                { label: '我参与的', value: 'membership' },
+                { label: '我星标的', value: 'starred' },
+                { label: '全部可见', value: 'all' }
+              ]}
+            />
+          )}
+          {!isGithub && <GroupSelect value={group} onChange={setGroup} />}
           <Input.Search
             allowClear
-            placeholder="搜索项目名或组名"
+            placeholder={isGithub ? '搜索仓库名' : '搜索项目名或组名'}
             style={{ width: 240 }}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -176,28 +190,34 @@ export default function ProjectsPage() {
           current: page,
           pageSize,
           total: projects.data?.total ?? undefined,
-          showTotal: (n) => `共 ${n} 个项目`,
+          showTotal: (n) => (projects.data?.total == null ? `本页 ${projects.data?.data.length ?? 0} 个${noun}` : `共 ${n} 个${noun}`),
           onChange: (p, s) => {
             setPage(p)
             setPageSize(s)
           }
         }}
         columns={[
+          !isGithub
+            ? {
+                title: '',
+                width: 40,
+                render: (_: unknown, p: ProjectRow) =>
+                  starred.data?.has(p.id) ? (
+                    <StarFilled className="clickable" style={{ color: '#faad14' }} onClick={() => toggleStar(p)} />
+                  ) : (
+                    <StarOutlined className="clickable" onClick={() => toggleStar(p)} />
+                  )
+              }
+            : null,
           {
-            title: '',
-            width: 40,
-            render: (_, p) =>
-              starred.data?.has(p.id) ? (
-                <StarFilled className="clickable" style={{ color: '#faad14' }} onClick={() => toggleStar(p)} />
-              ) : (
-                <StarOutlined className="clickable" onClick={() => toggleStar(p)} />
-              )
-          },
-          {
-            title: '项目',
-            render: (_, p) => (
+            title: noun,
+            render: (_: unknown, p: ProjectRow) => (
               <div>
-                {renderName(p)}
+                {isGithub ? (
+                  <a onClick={() => navigate(`/projects/${p.id}`)}>{p.path_with_namespace}</a>
+                ) : (
+                  renderName(p)
+                )}
                 {p.description && (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
                     {p.description}
@@ -206,24 +226,29 @@ export default function ProjectsPage() {
               </div>
             )
           },
-          { title: '可见性', width: 80, render: (_, p) => (p.visibility ? <Tag>{visibilityText[p.visibility] ?? p.visibility}</Tag> : '-') },
+          { title: '可见性', width: 80, render: (_: unknown, p: ProjectRow) => (p.visibility ? <Tag>{visibilityText[p.visibility] ?? p.visibility}</Tag> : '-') },
           { title: '默认分支', width: 120, dataIndex: 'default_branch' },
           { title: '星标', width: 70, dataIndex: 'star_count' },
-          { title: '最后活动', width: 110, dataIndex: 'last_activity_at', render: (v) => <TimeAgo value={v} /> },
+          { title: '最后活动', width: 110, dataIndex: 'last_activity_at', render: (v: string) => <TimeAgo value={v} /> },
           {
             title: '操作',
-            width: 300,
-            render: (_, p) => (
+            width: isGithub ? 220 : 300,
+            render: (_: unknown, p: ProjectRow) => (
               <Space>
                 <a onClick={() => navigate(`/projects/${p.id}`)}>代码</a>
-                <a onClick={() => navigate(`/mrs?project=${p.id}`)}>合并请求</a>
+                <a onClick={() => navigate(`/mrs?project=${p.id}`)}>{mrText}</a>
                 <a onClick={() => navigate(`/issues?project=${p.id}`)}>Issue</a>
-                <a onClick={() => navigate(`/pipelines?project=${p.id}`)}>流水线</a>
+                {caps?.pipelines && <a onClick={() => navigate(`/pipelines?project=${p.id}`)}>流水线</a>}
                 <a onClick={() => openExternal(p.web_url)}>网页</a>
               </Space>
             )
           }
-        ]}
+        ].filter(Boolean) as Parameters<typeof Table<ProjectRow>>[0]['columns']}
+      />
+      <CreateProjectModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(p) => navigate(`/projects/${p.id}`)}
       />
     </Card>
   )

@@ -201,3 +201,258 @@ body,
   color: #8c8c8c;
   border-left: 4px solid #d9d9d9;
 }
+
+/* ---------- 本地仓库 ---------- */
+
+.ws-page {
+  height: calc(100vh - 88px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ws-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.ws-page-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.ws-sider {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+}
+
+.ws-sider-meta {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: #8c8c8c;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.ws-sider-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ws-repo-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.ws-repo-item:hover {
+  background: #f0f5ff;
+}
+
+.ws-repo-item.active {
+  background: #e6f4ff;
+  border-right: 2px solid #1677ff;
+}
+
+.ws-repo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: #d9d9d9;
+}
+
+.ws-repo-dot.ok {
+  background: #52c41a;
+}
+
+.ws-repo-item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.ws-repo-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #262626;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.ws-repo-item-path {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8c8c8c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.ws-repo-header {
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.ws-repo-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #141414;
+}
+
+.ws-repo-path {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.ws-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ws-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.ws-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: #f0f0f0;
+  margin: 0 2px;
+}
+
+.ws-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 20px 16px;
+}
+
+.ws-tabs .ant-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-tabs .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ws-tabs .ant-tabs-content,
+.ws-tabs .ant-tabs-tabpane {
+  height: 100%;
+}
+
+.ws-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.ws-empty-clean {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #8c8c8c;
+  background: linear-gradient(180deg, #fafafa 0%, #fff 100%);
+  border: 1px dashed #e8e8e8;
+  border-radius: 8px;
+}
+
+.ws-empty-clean .hint {
+  font-size: 12px;
+  color: #bfbfbf;
+}
+
+.ws-commit-bar {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+.ws-commit-bar .ant-input {
+  flex: 1;
+}
+
+.ws-commit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ws-diff-panel {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ws-diff-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.ws-diff-panel-body {
+  padding: 8px 12px;
+  max-height: 360px;
+  overflow: auto;
+}

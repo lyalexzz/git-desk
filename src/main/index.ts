@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { getConfig, saveConfig } from './config'
-import { cancelAllGitlab, cancelGitlab, gitlabRequest } from './gitlab'
-import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
+import { getConfig, removeAccount, saveConfig, switchAccount } from './config'
+import { apiRequest, cancelAllApi, cancelApi } from './api'
+import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout, type LoginServer } from './auth'
 import { openPasswordPage } from './password'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
 import { cancelAllChats, cancelChat, listModels, streamChat, testAi } from './ai'
@@ -16,6 +17,16 @@ function openExternal(url: string): void {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
 }
 
+function appIconPath(): string {
+  // 开发态：仓库 resources/；打包后优先 extraResources，其次 asar 内 resources
+  const candidates = [
+    join(process.resourcesPath, 'icon.ico'),
+    join(__dirname, '../../resources/icon.ico'),
+    join(app.getAppPath(), 'resources/icon.ico')
+  ]
+  return candidates.find((p) => existsSync(p)) ?? candidates[1]
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1400,
@@ -25,6 +36,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Git 桌面端',
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -46,7 +58,7 @@ function createWindow(): void {
   win.on('closed', () => {
     win = null
     stopNotifier()
-    cancelAllGitlab()
+    cancelAllApi()
     cancelAllChats()
     killGitChildren()
   })
@@ -84,11 +96,13 @@ if (!app.requestSingleInstanceLock()) {
       }
       return r
     }
-    ipcMain.handle('auth:token', async (_e, token: string) => afterLogin(await loginWithToken(token)))
-    ipcMain.handle('auth:password', async (_e, username: string, password: string) =>
-      afterLogin(await loginWithPassword(username, password))
+    ipcMain.handle('auth:token', async (_e, token: string, server?: LoginServer) =>
+      afterLogin(await loginWithToken(token, server))
     )
-    ipcMain.handle('auth:web', async () => afterLogin(await loginWithWeb(win)))
+    ipcMain.handle('auth:password', async (_e, username: string, password: string, server?: LoginServer) =>
+      afterLogin(await loginWithPassword(username, password, server))
+    )
+    ipcMain.handle('auth:web', async (_e, server?: LoginServer) => afterLogin(await loginWithWeb(win, server)))
     ipcMain.handle('auth:password-page', () => openPasswordPage(win))
     ipcMain.handle('auth:redirect-uri', () => OAUTH_REDIRECT_URI)
     ipcMain.handle('auth:logout', async () => {
@@ -97,19 +111,31 @@ if (!app.requestSingleInstanceLock()) {
       resetNotifier()
       return getConfig()
     })
+    ipcMain.handle('accounts:switch', (_e, id: string) => {
+      const cfg = switchAccount(id)
+      resetNotifier()
+      startNotifier(() => win)
+      return cfg
+    })
+    ipcMain.handle('accounts:remove', (_e, id: string) => {
+      const cfg = removeAccount(id)
+      resetNotifier()
+      startNotifier(() => win)
+      return cfg
+    })
     ipcMain.handle('api:request', (e, req: ApiRequest) => {
       const id = req.requestId
       if (typeof id === 'number') {
         const wc = e.sender
-        const onGone = (): void => cancelGitlab(id)
+        const onGone = (): void => cancelApi(id)
         wc.once('destroyed', onGone)
-        return gitlabRequest(req).finally(() => {
+        return apiRequest(req).finally(() => {
           if (!wc.isDestroyed()) wc.removeListener('destroyed', onGone)
         })
       }
-      return gitlabRequest(req)
+      return apiRequest(req)
     })
-    ipcMain.on('api:cancel', (_e, id: number) => cancelGitlab(id))
+    ipcMain.on('api:cancel', (_e, id: number) => cancelApi(id))
     ipcMain.handle('shell:open', (_e, url: string) => openExternal(url))
     ipcMain.handle('ai:models', (_e, conn: AiConnection) => listModels(conn))
     ipcMain.handle('ai:test', (_e, conn: AiConnection) => testAi(conn))
@@ -132,7 +158,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     stopNotifier()
-    cancelAllGitlab()
+    cancelAllApi()
     cancelAllChats()
     killGitChildren()
   })

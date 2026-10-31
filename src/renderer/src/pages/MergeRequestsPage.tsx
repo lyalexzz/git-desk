@@ -3,7 +3,7 @@ import { Button, Card, Input, Segmented, Select, Space, Table, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { getPage, useMe } from '../api'
-import { MergeStatus, MrState, TimeAgo } from '../labels'
+import { MergeStatus, MrState, TimeAgo, mrLabel } from '../labels'
 import CreateMrModal from '../components/CreateMrModal'
 import MrDrawer from '../components/MrDrawer'
 import ProjectSelect from '../components/ProjectSelect'
@@ -13,6 +13,8 @@ type Scope = 'review' | 'assigned_to_me' | 'created_by_me' | 'all'
 
 export default function MergeRequestsPage() {
   const me = useMe()
+  const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
+  const title = mrLabel(cfg.data?.provider || 'gitlab')
   const [params, setParams] = useSearchParams()
   const projectId = params.get('project') ? Number(params.get('project')) : undefined
   const scope = (params.get('scope') as Scope) || (projectId ? 'all' : 'review')
@@ -53,11 +55,11 @@ export default function MergeRequestsPage() {
 
   return (
     <Card
-      title="合并请求"
+      title={title}
       extra={
         <Space>
-          <Button type="primary" onClick={() => setCreating(true)}>
-            新建合并请求
+          <Button type="primary" onClick={() => setCreating(true)} disabled={!projectId}>
+            新建{title}
           </Button>
           <Button onClick={() => void mrs.refetch()} loading={mrs.isFetching}>
             刷新

@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Button,
   Card,
-  DatePicker,
   Empty,
   Form,
   Input,
@@ -10,7 +9,6 @@ import {
   Popconfirm,
   Result,
   Segmented,
-  Select,
   Space,
   Table,
   Tabs,
@@ -19,13 +17,13 @@ import {
   Typography
 } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import type { Dayjs } from 'dayjs'
-import { del, get, getPage, post, put, useAction, useMe } from '../api'
-import { TimeAgo, UserState, accessLevels } from '../labels'
+import { getPage, post, useAction, useMe } from '../api'
+import { TimeAgo, UserState } from '../labels'
+import ProjectMembersPanel from '../components/ProjectMembersPanel'
 import ProjectSelect from '../components/ProjectSelect'
 import ResetPasswordModal from '../components/ResetPasswordModal'
 import { isLdapUser } from '../password'
-import type { Member, User } from '../types'
+import type { User } from '../types'
 
 type Filter = 'all' | 'active' | 'blocked'
 
@@ -216,122 +214,17 @@ function StateAction({ u }: { u: User }) {
   }
 }
 
-function UserPicker({ value, onChange }: { value?: number; onChange?: (v: number) => void }) {
-  const [input, setInput] = useState('')
-  const [search, setSearch] = useState('')
-  useEffect(() => {
-    const t = setTimeout(() => setSearch(input), 300)
-    return () => clearTimeout(t)
-  }, [input])
-  const users = useQuery({
-    queryKey: ['user-options', search],
-    queryFn: ({ signal }) => get<User[]>('/users', { search, active: true, per_page: 20 }, signal),
-    enabled: search.length > 0
-  })
-  return (
-    <Select
-      showSearch
-      value={value}
-      onChange={onChange}
-      filterOption={false}
-      onSearch={setInput}
-      placeholder="输入姓名或用户名搜索"
-      loading={users.isFetching}
-      notFoundContent={search ? '没有匹配的用户' : '请输入关键字'}
-      options={(users.data ?? []).map((u) => ({ value: u.id, label: `${u.name}（${u.username}）` }))}
-    />
-  )
-}
-
 function ProjectMembers() {
-  const run = useAction()
   const [projectId, setProjectId] = useState<number>()
-  const [adding, setAdding] = useState(false)
-  const [form] = Form.useForm<{ userId: number; accessLevel: number; expiresAt?: Dayjs }>()
-  const key = ['members', projectId]
-  const members = useQuery({
-    queryKey: key,
-    queryFn: ({ signal }) => get<Member[]>(`/projects/${projectId}/members`, { per_page: 100 }, signal),
-    enabled: projectId != null
-  })
-
-  const add = async (v: { userId: number; accessLevel: number; expiresAt?: Dayjs }) => {
-    const ok = await run(
-      () =>
-        post(`/projects/${projectId}/members`, {
-          user_id: v.userId,
-          access_level: v.accessLevel,
-          expires_at: v.expiresAt?.format('YYYY-MM-DD')
-        }),
-      '成员已添加',
-      [key]
-    )
-    if (ok) {
-      setAdding(false)
-      form.resetFields()
-    }
-  }
-
   return (
-    <>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <ProjectSelect value={projectId} onChange={setProjectId} />
-        <Button type="primary" disabled={projectId == null} onClick={() => setAdding(true)}>
-          添加成员
-        </Button>
-      </Space>
+    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <ProjectSelect value={projectId} onChange={setProjectId} style={{ minWidth: 280 }} />
       {projectId == null ? (
         <Empty description="选择项目后管理其直接成员（继承自群组的成员需在群组中管理）" />
       ) : (
-        <Table<Member>
-          rowKey="id"
-          loading={members.isFetching}
-          dataSource={members.data}
-          pagination={false}
-          columns={[
-            { title: '姓名', dataIndex: 'name' },
-            { title: '用户名', dataIndex: 'username' },
-            {
-              title: '角色',
-              width: 200,
-              render: (_, m) => (
-                <Select
-                  value={m.access_level}
-                  style={{ width: 180 }}
-                  options={accessLevels}
-                  onChange={(level) =>
-                    run(() => put(`/projects/${projectId}/members/${m.id}`, { access_level: level }), '角色已更新', [key])
-                  }
-                />
-              )
-            },
-            { title: '到期', width: 120, dataIndex: 'expires_at', render: (v) => v ?? '永久' },
-            {
-              title: '操作',
-              width: 90,
-              render: (_, m) => (
-                <Popconfirm title={`从项目中移除 ${m.name}？`} onConfirm={() => run(() => del(`/projects/${projectId}/members/${m.id}`), '已移除', [key])}>
-                  <a style={{ color: '#ff4d4f' }}>移除</a>
-                </Popconfirm>
-              )
-            }
-          ]}
-        />
+        <ProjectMembersPanel projectId={projectId} />
       )}
-      <Modal title="添加项目成员" open={adding} onCancel={() => setAdding(false)} onOk={() => form.submit()} okText="添加">
-        <Form form={form} layout="vertical" onFinish={add} initialValues={{ accessLevel: 30 }}>
-          <Form.Item label="用户" name="userId" rules={[{ required: true, message: '请选择用户' }]}>
-            <UserPicker />
-          </Form.Item>
-          <Form.Item label="角色" name="accessLevel">
-            <Select options={accessLevels} />
-          </Form.Item>
-          <Form.Item label="到期时间（可选）" name="expiresAt">
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-        </Form>
-      </Modal>
-    </>
+    </Space>
   )
 }
 

@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Alert,
   App as AntApp,
   Button,
-  Card,
+  Dropdown,
   Drawer,
   Empty,
   Input,
-  Layout,
-  List,
   Select,
   Space,
   Spin,
@@ -17,7 +15,15 @@ import {
   Tag,
   Typography
 } from 'antd'
-import { FolderOpenOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  BranchesOutlined,
+  CloudDownloadOutlined,
+  CloudUploadOutlined,
+  CodeOutlined,
+  FolderOpenOutlined,
+  MoreOutlined,
+  ReloadOutlined
+} from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { get } from '../api'
@@ -25,8 +31,6 @@ import { useGitEnv } from '../components/GitSshSettings'
 import { TimeAgo } from '../labels'
 import type { GitFileStatus, GitLocalCommit, OpenTarget, ScannedRepo, ScanResult } from '../../../shared/git'
 import type { Project } from '../types'
-
-const { Sider, Content } = Layout
 
 type ListItem =
   | { key: string; kind: 'linked'; projectId: number; path: string; title: string }
@@ -112,7 +116,6 @@ function LocalCommitsPanel({ projectId, branch }: { projectId: number; branch?: 
         pagination={{
           current: page,
           pageSize,
-          // git log 不方便拿总数：有下一页时多显示一页占位
           total: data.length < pageSize ? (page - 1) * pageSize + data.length : page * pageSize + 1,
           showSizeChanger: true,
           onChange: (p, s) => {
@@ -249,188 +252,245 @@ function RepoPanel({ projectId, path }: { projectId: number; path: string }) {
     ]
   }, [st])
 
+  const dirtyCount = rows.length
+  const openItems = [
+    { key: 'folder', label: '打开文件夹', icon: <FolderOpenOutlined />, onClick: () => void open('folder') },
+    env.data?.editors.vscode
+      ? { key: 'vscode', label: '用 VS Code 打开', icon: <CodeOutlined />, onClick: () => void open('vscode') }
+      : null,
+    env.data?.editors.cursor
+      ? { key: 'cursor', label: '用 Cursor 打开', icon: <CodeOutlined />, onClick: () => void open('cursor') }
+      : null,
+    { key: 'detail', label: '项目详情', onClick: () => navigate(`/projects/${projectId}`) }
+  ].filter(Boolean) as { key: string; label: string; icon?: ReactNode; onClick: () => void }[]
+
+  const moreItems = [
+    {
+      key: 'forget',
+      label: '忘记路径',
+      danger: true,
+      onClick: () => {
+        modal.confirm({
+          title: '移除本地克隆记录？',
+          content: '只删除软件里的记录，不会删除磁盘上的文件夹',
+          onOk: async () => {
+            await window.desktop.gitForget(projectId)
+            await qc.invalidateQueries({ queryKey: ['git-clones'] })
+            message.success('已移除记录')
+          }
+        })
+      }
+    }
+  ]
+
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div>
-        <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 4 }}>
-          {project.data?.name_with_namespace || `项目 #${projectId}`}
-        </Typography.Title>
-        <Typography.Text type="secondary" copyable>
+    <div className="ws-main">
+      <div className="ws-repo-header">
+        <h2 className="ws-repo-title">{project.data?.name_with_namespace || `项目 #${projectId}`}</h2>
+        <Typography.Text className="ws-repo-path" type="secondary" copyable>
           {path}
         </Typography.Text>
+        <div className="ws-toolbar">
+          <div className="ws-toolbar-group">
+            <BranchesOutlined style={{ color: '#8c8c8c' }} />
+            <Select
+              size="small"
+              variant="borderless"
+              style={{ minWidth: 140 }}
+              loading={branches.isLoading}
+              value={st?.branch}
+              options={(branches.data ?? []).map((b) => ({
+                value: b.name,
+                label: b.current ? `${b.name}（当前）` : b.name
+              }))}
+              onChange={(v) => void runGit(() => window.desktop.gitCheckout(projectId, v))}
+            />
+            {st?.upstream && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {st.upstream}
+                {st.ahead > 0 ? ` ↑${st.ahead}` : ''}
+                {st.behind > 0 ? ` ↓${st.behind}` : ''}
+              </Typography.Text>
+            )}
+          </div>
+          <Button.Group>
+            <Button
+              size="small"
+              icon={<CloudDownloadOutlined />}
+              loading={busy}
+              onClick={() => void runGit(() => window.desktop.gitPull(projectId))}
+            >
+              拉取
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              icon={<CloudUploadOutlined />}
+              loading={busy}
+              onClick={() => void runGit(() => window.desktop.gitPush(projectId))}
+            >
+              推送
+            </Button>
+          </Button.Group>
+          <Dropdown menu={{ items: openItems.map(({ key, label, icon, onClick }) => ({ key, label, icon, onClick })) }}>
+            <Button size="small" icon={<FolderOpenOutlined />}>
+              打开
+            </Button>
+          </Dropdown>
+          <Dropdown menu={{ items: moreItems }}>
+            <Button size="small" icon={<MoreOutlined />} />
+          </Dropdown>
+        </div>
       </div>
 
-      <Space wrap>
-        <span>
-          分支{' '}
-          <Select
-            style={{ minWidth: 180 }}
-            loading={branches.isLoading}
-            value={st?.branch}
-            options={(branches.data ?? []).map((b) => ({ value: b.name, label: b.current ? `${b.name}（当前）` : b.name }))}
-            onChange={(v) => void runGit(() => window.desktop.gitCheckout(projectId, v))}
-          />
-        </span>
-        {st?.upstream && (
-          <Typography.Text type="secondary">
-            跟踪 {st.upstream}
-            {st.ahead > 0 ? ` · 超前 ${st.ahead}` : ''}
-            {st.behind > 0 ? ` · 落后 ${st.behind}` : ''}
-          </Typography.Text>
-        )}
-        <Button loading={busy} onClick={() => void runGit(() => window.desktop.gitPull(projectId))}>
-          拉取更新
-        </Button>
-        <Button type="primary" loading={busy} onClick={() => void runGit(() => window.desktop.gitPush(projectId))}>
-          推送
-        </Button>
-        <Button onClick={() => void open('folder')}>打开文件夹</Button>
-        {env.data?.editors.vscode && <Button onClick={() => void open('vscode')}>VS Code</Button>}
-        {env.data?.editors.cursor && <Button onClick={() => void open('cursor')}>Cursor</Button>}
-        <Button onClick={() => navigate(`/projects/${projectId}`)}>项目详情</Button>
-        <Button
-          danger
-          type="link"
-          onClick={() => {
-            modal.confirm({
-              title: '移除本地克隆记录？',
-              content: '只删除软件里的记录，不会删除磁盘上的文件夹',
-              onOk: async () => {
-                await window.desktop.gitForget(projectId)
-                await qc.invalidateQueries({ queryKey: ['git-clones'] })
-                message.success('已移除记录')
-              }
-            })
-          }}
-        >
-          忘记路径
-        </Button>
-      </Space>
-
-      <Tabs
-        activeKey={tab}
-        onChange={setTab}
-        items={[
-          {
-            key: 'changes',
-            label: '工作区',
-            children: status.isLoading ? (
-              <Spin />
-            ) : status.isError ? (
-              <Empty description={(status.error as Error).message} />
-            ) : (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Table
-                  size="small"
-                  rowKey="key"
-                  pagination={false}
-                  dataSource={rows}
-                  locale={{ emptyText: '工作区干净，没有变更' }}
-                  onRow={(r) => ({
-                    onClick: () =>
-                      setSelected({
-                        path: r.path,
-                        staged: r.area === 'staged' ? 'staged' : 'worktree'
-                      })
-                  })}
-                  columns={[
-                    {
-                      title: '区域',
-                      width: 90,
-                      render: (_, r) =>
-                        r.area === 'staged' ? (
-                          <Tag color="blue">已暂存</Tag>
-                        ) : r.area === 'untracked' ? (
-                          <Tag>未跟踪</Tag>
-                        ) : (
-                          <Tag color="orange">未暂存</Tag>
-                        )
-                    },
-                    { title: '状态', width: 80, render: (_, r) => statusLabel(r, r.area) },
-                    {
-                      title: '文件',
-                      render: (_, r) => (r.from ? `${r.from} → ${r.path}` : r.path)
-                    },
-                    {
-                      title: '操作',
-                      width: 160,
-                      render: (_, r) =>
-                        r.area === 'staged' ? (
-                          <Button
-                            size="small"
-                            type="link"
-                            disabled={busy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void runGit(() => window.desktop.gitUnstage(projectId, [r.path]), '已取消暂存')
-                            }}
-                          >
-                            取消暂存
-                          </Button>
-                        ) : (
-                          <Button
-                            size="small"
-                            type="link"
-                            disabled={busy}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void runGit(() => window.desktop.gitStage(projectId, [r.path]), '已暂存')
-                            }}
-                          >
-                            暂存
-                          </Button>
-                        )
-                    }
-                  ]}
-                />
-
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input.TextArea
-                    rows={2}
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="提交说明"
-                  />
-                  <Button
-                    type="primary"
-                    disabled={!messageText.trim() || !st?.staged.length}
-                    loading={busy}
-                    onClick={async () => {
-                      const ok = await runGit(() => window.desktop.gitCommit(projectId, messageText))
-                      if (ok) setMessageText('')
-                    }}
-                  >
-                    提交
-                  </Button>
-                  {st && st.staged.length === 0 && (
-                    <Typography.Text type="secondary">暂存区为空时无法提交，请先点文件旁的「暂存」。</Typography.Text>
+      <div className="ws-tabs">
+        <Tabs
+          activeKey={tab}
+          onChange={setTab}
+          items={[
+            {
+              key: 'changes',
+              label: dirtyCount > 0 ? `工作区（${dirtyCount}）` : '工作区',
+              children: status.isLoading ? (
+                <div style={{ padding: 40, textAlign: 'center' }}>
+                  <Spin />
+                </div>
+              ) : status.isError ? (
+                <Empty description={(status.error as Error).message} />
+              ) : (
+                <div className="ws-changes">
+                  {dirtyCount === 0 ? (
+                    <div className="ws-empty-clean">
+                      <Typography.Text type="secondary">工作区干净，没有变更</Typography.Text>
+                      <span className="hint">修改代码后可在此暂存、提交并推送</span>
+                    </div>
+                  ) : (
+                    <Table
+                      size="small"
+                      rowKey="key"
+                      pagination={false}
+                      dataSource={rows}
+                      onRow={(r) => ({
+                        onClick: () =>
+                          setSelected({
+                            path: r.path,
+                            staged: r.area === 'staged' ? 'staged' : 'worktree'
+                          })
+                      })}
+                      columns={[
+                        {
+                          title: '区域',
+                          width: 90,
+                          render: (_, r) =>
+                            r.area === 'staged' ? (
+                              <Tag color="blue">已暂存</Tag>
+                            ) : r.area === 'untracked' ? (
+                              <Tag>未跟踪</Tag>
+                            ) : (
+                              <Tag color="orange">未暂存</Tag>
+                            )
+                        },
+                        { title: '状态', width: 80, render: (_, r) => statusLabel(r, r.area) },
+                        {
+                          title: '文件',
+                          render: (_, r) => (
+                            <Typography.Text style={{ fontFamily: 'Consolas, monospace', fontSize: 12 }}>
+                              {r.from ? `${r.from} → ${r.path}` : r.path}
+                            </Typography.Text>
+                          )
+                        },
+                        {
+                          title: '操作',
+                          width: 100,
+                          render: (_, r) =>
+                            r.area === 'staged' ? (
+                              <Button
+                                size="small"
+                                type="link"
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void runGit(() => window.desktop.gitUnstage(projectId, [r.path]), '已取消暂存')
+                                }}
+                              >
+                                取消暂存
+                              </Button>
+                            ) : (
+                              <Button
+                                size="small"
+                                type="link"
+                                disabled={busy}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void runGit(() => window.desktop.gitStage(projectId, [r.path]), '已暂存')
+                                }}
+                              >
+                                暂存
+                              </Button>
+                            )
+                        }
+                      ]}
+                    />
                   )}
-                </Space>
 
-                {selected && (
-                  <Card
-                    size="small"
-                    title={`差异：${selected.path}（${selected.staged === 'staged' ? '已暂存' : '工作区'}）`}
-                    extra={
-                      <Button type="link" size="small" onClick={() => setSelected(null)}>
-                        关闭
+                  <div className="ws-commit-bar">
+                    <Input.TextArea
+                      rows={2}
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      placeholder={st?.staged.length ? '提交说明' : '先暂存文件后再填写提交说明'}
+                      disabled={!st?.staged.length && !messageText}
+                    />
+                    <div className="ws-commit-actions">
+                      <Button
+                        type="primary"
+                        disabled={!messageText.trim() || !st?.staged.length}
+                        loading={busy}
+                        onClick={async () => {
+                          const ok = await runGit(() => window.desktop.gitCommit(projectId, messageText))
+                          if (ok) setMessageText('')
+                        }}
+                      >
+                        提交
                       </Button>
-                    }
-                  >
-                    {diff.isLoading ? <Spin /> : <LocalDiffView text={diff.data ?? ''} />}
-                  </Card>
-                )}
-              </Space>
-            )
-          },
-          {
-            key: 'commits',
-            label: '提交记录',
-            children: <LocalCommitsPanel projectId={projectId} branch={st?.branch} />
-          }
-        ]}
-      />
-    </Space>
+                      {st && st.staged.length > 0 && (
+                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                          已暂存 {st.staged.length} 个
+                        </Typography.Text>
+                      )}
+                    </div>
+                  </div>
+
+                  {selected && (
+                    <div className="ws-diff-panel">
+                      <div className="ws-diff-panel-head">
+                        <span>
+                          {selected.path}
+                          <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                            {selected.staged === 'staged' ? '已暂存' : '工作区'}
+                          </Typography.Text>
+                        </span>
+                        <Button type="link" size="small" onClick={() => setSelected(null)}>
+                          关闭
+                        </Button>
+                      </div>
+                      <div className="ws-diff-panel-body">
+                        {diff.isLoading ? <Spin /> : <LocalDiffView text={diff.data ?? ''} />}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            },
+            {
+              key: 'commits',
+              label: '提交记录',
+              children: <LocalCommitsPanel projectId={projectId} branch={st?.branch} />
+            }
+          ]}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -442,37 +502,50 @@ function UnmatchedPanel({ item }: { item: Extract<ListItem, { kind: 'unmatched' 
     if (!r.ok) message.error(r.error)
   }
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <div>
-        <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 4 }}>
-          {item.title}
-        </Typography.Title>
-        <Typography.Text type="secondary" copyable>
+    <div className="ws-main">
+      <div className="ws-repo-header">
+        <h2 className="ws-repo-title">{item.title}</h2>
+        <Typography.Text className="ws-repo-path" type="secondary" copyable>
           {item.path}
         </Typography.Text>
+        <div className="ws-toolbar">
+          <Button size="small" icon={<FolderOpenOutlined />} onClick={() => void open('folder')}>
+            打开文件夹
+          </Button>
+          {env.data?.editors.vscode && (
+            <Button size="small" onClick={() => void open('vscode')}>
+              VS Code
+            </Button>
+          )}
+          {env.data?.editors.cursor && (
+            <Button size="small" onClick={() => void open('cursor')}>
+              Cursor
+            </Button>
+          )}
+          <Button size="small" onClick={() => void open('terminal')}>
+            终端
+          </Button>
+        </div>
       </div>
-      <Alert
-        type="warning"
-        showIcon
-        message="未匹配到当前服务器上的项目"
-        description="本地 origin 地址与当前登录的 GitLab / 极狐账号下的仓库对不上。可打开文件夹查看，或确认 remote 是否指向本服务器后再重新扫描。"
-      />
-      <Typography.Paragraph>
-        <div>
-          <Typography.Text type="secondary">当前分支：</Typography.Text> {item.branch || '未知'}
-        </div>
-        <div>
-          <Typography.Text type="secondary">origin：</Typography.Text>{' '}
-          {item.remote ? <Typography.Text copyable>{item.remote}</Typography.Text> : '无'}
-        </div>
-      </Typography.Paragraph>
-      <Space wrap>
-        <Button onClick={() => void open('folder')}>打开文件夹</Button>
-        {env.data?.editors.vscode && <Button onClick={() => void open('vscode')}>VS Code</Button>}
-        {env.data?.editors.cursor && <Button onClick={() => void open('cursor')}>Cursor</Button>}
-        <Button onClick={() => void open('terminal')}>在终端打开</Button>
-      </Space>
-    </Space>
+      <div style={{ padding: 20 }}>
+        <Alert
+          type="warning"
+          showIcon
+          message="未匹配到当前服务器上的项目"
+          description="本地 origin 与当前登录账号下的仓库对不上。可打开文件夹查看，或确认 remote 后再重新扫描。"
+          style={{ marginBottom: 16 }}
+        />
+        <Space direction="vertical" size={4}>
+          <div>
+            <Typography.Text type="secondary">当前分支：</Typography.Text> {item.branch || '未知'}
+          </div>
+          <div>
+            <Typography.Text type="secondary">origin：</Typography.Text>{' '}
+            {item.remote ? <Typography.Text copyable>{item.remote}</Typography.Text> : '无'}
+          </div>
+        </Space>
+      </div>
+    </div>
   )
 }
 
@@ -481,8 +554,7 @@ export default function WorkspacePage() {
   const qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const projectParam = params.get('project')
-  const selectedKey =
-    params.get('sel') || (projectParam ? `p-${projectParam}` : undefined)
+  const selectedKey = params.get('sel') || (projectParam ? `p-${projectParam}` : undefined)
   const [scanning, setScanning] = useState(false)
   const [lastScan, setLastScan] = useState<ScanResult | null>(null)
 
@@ -579,86 +651,80 @@ export default function WorkspacePage() {
   }
 
   return (
-    <Card
-      title="本地仓库"
-      extra={
-        <Space wrap>
+    <div className="ws-page">
+      <div className="ws-page-header">
+        <h3>本地仓库</h3>
+        <Space size={8} wrap>
           {scanDir.data && (
-            <Typography.Text type="secondary" style={{ maxWidth: 280 }} ellipsis={{ tooltip: scanDir.data }}>
-              上次：{scanDir.data}
+            <Typography.Text type="secondary" style={{ maxWidth: 260, fontSize: 12 }} ellipsis={{ tooltip: scanDir.data }}>
+              {scanDir.data}
             </Typography.Text>
           )}
           {scanDir.data && (
-            <Button icon={<ReloadOutlined />} loading={scanning} onClick={() => void doScan(scanDir.data!)}>
+            <Button size="small" icon={<ReloadOutlined />} loading={scanning} onClick={() => void doScan(scanDir.data!)}>
               重新扫描
             </Button>
           )}
-          <Button type="primary" icon={<FolderOpenOutlined />} loading={scanning} onClick={() => void doScan()}>
+          <Button
+            type="primary"
+            size="small"
+            icon={<FolderOpenOutlined />}
+            loading={scanning}
+            onClick={() => void doScan()}
+          >
             扫描本地文件夹
           </Button>
         </Space>
-      }
-      styles={{ body: { padding: 0 } }}
-    >
+      </div>
+
       {clones.isLoading ? (
-        <Spin style={{ margin: 40 }} />
+        <div style={{ padding: 48, textAlign: 'center' }}>
+          <Spin />
+        </div>
       ) : items.length === 0 ? (
-        <Empty
-          style={{ margin: 40 }}
-          description="还没有本地仓库。可扫描本机文件夹自动发现 Git 项目并匹配云端，或到项目详情页「拉取代码」。"
-        >
-          <Button type="primary" loading={scanning} onClick={() => void doScan()}>
-            扫描本地文件夹
-          </Button>
-        </Empty>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Empty description="还没有本地仓库。可扫描本机文件夹自动发现并匹配云端项目。">
+            <Button type="primary" loading={scanning} onClick={() => void doScan()}>
+              扫描本地文件夹
+            </Button>
+          </Empty>
+        </div>
       ) : (
-        <Layout style={{ background: 'transparent', minHeight: 480 }}>
-          <Sider width={280} theme="light" style={{ borderRight: '1px solid #f0f0f0', background: '#fff' }}>
+        <div className="ws-body">
+          <aside className="ws-sider">
             {lastScan && (
-              <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', fontSize: 12, color: '#8c8c8c' }}>
+              <div className="ws-sider-meta">
                 最近扫描：匹配 {lastScan.matched} · 未匹配 {lastScan.unmatched}
               </div>
             )}
-            <List
-              size="small"
-              dataSource={items}
-              renderItem={(item) => (
-                <List.Item
-                  style={{
-                    cursor: 'pointer',
-                    padding: '10px 16px',
-                    background: item.key === selectedKey ? '#e6f4ff' : undefined
-                  }}
+            <div className="ws-sider-list">
+              {items.map((item) => (
+                <div
+                  key={item.key}
+                  className={`ws-repo-item${item.key === selectedKey ? ' active' : ''}`}
                   onClick={() => setParams({ sel: item.key })}
+                  title={item.path}
                 >
-                  <List.Item.Meta
-                    title={
-                      <Space size={6}>
-                        <span>{item.title}</span>
-                        {item.kind === 'linked' ? <Tag color="success">已匹配</Tag> : <Tag>未匹配</Tag>}
-                      </Space>
-                    }
-                    description={
-                      <Typography.Text type="secondary" ellipsis style={{ maxWidth: 240, fontSize: 12 }}>
-                        {item.path}
-                      </Typography.Text>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          </Sider>
-          <Content style={{ padding: 16, background: '#fff' }}>
-            {!current ? (
+                  <span className={`ws-repo-dot${item.kind === 'linked' ? ' ok' : ''}`} />
+                  <div className="ws-repo-item-main">
+                    <div className="ws-repo-item-title">{item.title}</div>
+                    <div className="ws-repo-path">{item.path}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </aside>
+          {!current ? (
+            <div className="ws-main" style={{ alignItems: 'center', justifyContent: 'center' }}>
               <Empty description="请选择仓库" />
-            ) : current.kind === 'linked' ? (
-              <RepoPanel projectId={current.projectId} path={current.path} />
-            ) : (
-              <UnmatchedPanel item={current} />
-            )}
-          </Content>
-        </Layout>
+            </div>
+          ) : current.kind === 'linked' ? (
+            <RepoPanel projectId={current.projectId} path={current.path} />
+          ) : (
+            <UnmatchedPanel item={current} />
+          )}
+        </div>
       )}
-    </Card>
+    </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Checkbox, Form, Input, Modal, Select } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { getAll, post, useAction, useMe } from '../api'
+import { mrLabel } from '../labels'
 import ProjectSelect from './ProjectSelect'
 import type { Branch, MergeRequest } from '../types'
 
@@ -29,6 +30,9 @@ export default function CreateMrModal({
 }) {
   const me = useMe()
   const run = useAction()
+  const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
+  const titleWord = mrLabel(cfg.data?.provider || 'gitlab')
+  const isGithub = cfg.data?.provider === 'github'
   const [form] = Form.useForm<FormValues>()
   const projectId = Form.useWatch('projectId', form)
 
@@ -69,7 +73,7 @@ export default function CreateMrModal({
         })
         return created
       },
-      '合并请求已创建',
+      `${titleWord}已创建`,
       [['mrs']]
     )
     if (ok && created) {
@@ -82,9 +86,9 @@ export default function CreateMrModal({
   const opts = (branches.data ?? []).map((b) => ({ value: b.name, label: b.default ? `${b.name}（默认）` : b.name }))
 
   return (
-    <Modal title="新建合并请求" open={open} onCancel={onClose} onOk={() => void onOk()} okText="创建" width={640} destroyOnClose>
+    <Modal title={`新建${titleWord}`} open={open} onCancel={onClose} onOk={() => void onOk()} okText="创建" width={640} destroyOnClose>
       <Form form={form} layout="vertical">
-        <Form.Item label="项目" name="projectId" rules={[{ required: true, message: '请选择项目' }]}>
+        <Form.Item label={isGithub ? '仓库' : '项目'} name="projectId" rules={[{ required: true, message: isGithub ? '请选择仓库' : '请选择项目' }]}>
           <ProjectSelect />
         </Form.Item>
         <Form.Item label="源分支" name="source_branch" rules={[{ required: true, message: '请选择源分支' }]}>
@@ -105,9 +109,11 @@ export default function CreateMrModal({
         <Form.Item name="assignToMe" valuePropName="checked">
           <Checkbox>指派给我</Checkbox>
         </Form.Item>
-        <Form.Item name="remove_source_branch" valuePropName="checked">
-          <Checkbox>合并后删除源分支</Checkbox>
-        </Form.Item>
+        {!isGithub && (
+          <Form.Item name="remove_source_branch" valuePropName="checked">
+            <Checkbox>合并后删除源分支</Checkbox>
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   )

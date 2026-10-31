@@ -50,6 +50,8 @@ export interface DiffRefs {
 export interface MergeRequest {
   id: number
   iid: number
+  /** GitHub PR number；与 iid 同值，便于两侧共用 */
+  number?: number
   project_id: number
   title: string
   description: string | null
@@ -107,6 +109,37 @@ export interface Note {
   author: User
   created_at: string
   system: boolean
+}
+
+/** GitLab 审计事件（项目 / 实例）；Git 拉取克隆等多记在 details.custom_message */
+export interface AuditEvent {
+  id: number
+  author_id: number | null
+  author_name?: string
+  entity_id: number
+  entity_type: string
+  entity_path?: string
+  event_type?: string
+  ip_address?: string | null
+  created_at: string
+  target_id?: number | string
+  target_type?: string
+  target_details?: string
+  details?: {
+    author_name?: string
+    author_email?: string
+    author_class?: string
+    ip_address?: string | null
+    entity_path?: string
+    target_details?: string
+    custom_message?: string | Record<string, unknown>
+    change?: string
+    add?: string
+    remove?: string
+    from?: string
+    to?: string
+    [key: string]: unknown
+  }
 }
 
 export interface NotePosition {
@@ -284,4 +317,15 @@ export interface Group {
   full_path: string
   parent_id: number | null
   web_url: string
+}
+
+/** GitLab 命名空间（个人或组）；创建项目时选归属 */
+export interface Namespace {
+  id: number
+  name: string
+  path: string
+  kind: 'user' | 'group'
+  full_path: string
+  parent_id?: number | null
+  web_url?: string
 }

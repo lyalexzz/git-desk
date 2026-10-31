@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { App as AntApp, Button, Card, Descriptions, Form, InputNumber, Popconfirm, Space, Switch } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../api'
-import { authMethodText, platforms } from '../labels'
+import { authMethodText, platforms, productName } from '../labels'
 import AiSettings from '../components/AiSettings'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import GitSshSettings from '../components/GitSshSettings'
@@ -15,6 +15,8 @@ export default function SettingsPage() {
   const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
   const me = useMe()
   const c = cfg.data
+  const isGithub = c?.provider === 'github'
+  const product = c ? productName(c.platform, c.isJihu) : ''
   const [changingPassword, setChangingPassword] = useState(false)
 
   useEffect(() => {
@@ -39,11 +41,13 @@ export default function SettingsPage() {
         title="当前账号"
         extra={
           <Space>
-            <Button onClick={() => setChangingPassword(true)} disabled={!me.data}>
-              修改密码
-            </Button>
-            <Popconfirm title="确定退出登录？" description="会清除本机保存的登录令牌" onConfirm={logout}>
-              <Button danger>退出登录 / 切换账号</Button>
+            {!isGithub && (
+              <Button onClick={() => setChangingPassword(true)} disabled={!me.data}>
+                修改密码
+              </Button>
+            )}
+            <Popconfirm title="确定退出当前账号？" description="会清除本账号的登录令牌；其它已保存账号不受影响" onConfirm={logout}>
+              <Button danger>退出当前账号</Button>
             </Popconfirm>
           </Space>
         }
@@ -52,7 +56,7 @@ export default function SettingsPage() {
           <Descriptions.Item label="平台">{platforms.find((p) => p.value === c?.platform)?.label}</Descriptions.Item>
           <Descriptions.Item label="服务器">{c?.baseUrl}</Descriptions.Item>
           <Descriptions.Item label="版本">
-            {c?.serverVersion ? `${c.isJihu ? '极狐 GitLab' : 'GitLab'} ${c.serverVersion}` : '-'}
+            {c?.serverVersion ? `${product} ${c.serverVersion}` : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="用户">{me.data ? `${me.data.name}（${me.data.username}）` : '-'}</Descriptions.Item>
           <Descriptions.Item label="登录方式">{c?.authMethod ? authMethodText[c.authMethod] : '-'}</Descriptions.Item>
@@ -62,12 +66,16 @@ export default function SettingsPage() {
 
       <Card title="偏好设置">
         <Form form={form} layout="vertical" onFinish={save}>
-          <Form.Item label="桌面通知（待审核、流水线失败、被 @ 等）" name="notify" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item label="检查新消息的间隔（分钟）" name="pollMinutes">
-            <InputNumber min={1} max={60} />
-          </Form.Item>
+          {c?.capabilities.todos && (
+            <>
+              <Form.Item label="桌面通知（待审核、流水线失败、被 @ 等）" name="notify" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+              <Form.Item label="检查新消息的间隔（分钟）" name="pollMinutes">
+                <InputNumber min={1} max={60} />
+              </Form.Item>
+            </>
+          )}
           <Form.Item label="忽略 HTTPS 证书校验（内网自签证书时开启）" name="ignoreTls" valuePropName="checked">
             <Switch />
           </Form.Item>
@@ -79,7 +87,7 @@ export default function SettingsPage() {
 
       <GitSshSettings />
 
-      <AiSettings />
+      {c?.capabilities.aiReview && <AiSettings />}
     </Space>
   )
 }

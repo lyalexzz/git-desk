@@ -6,17 +6,26 @@ asar: true
 npmRebuild: false
 directories:
   output: dist
+  buildResources: build
 files:
   - out/**/*
   - package.json
+  - resources/**/*
   - "!**/*.map"
   - "!**/*.tsbuildinfo"
+extraResources:
+  - from: resources/icon.ico
+    to: icon.ico
 win:
+  icon: build/icon.ico
   executableName: gitlab-desk
   artifactName: gitlab-desk-${version}-setup.${ext}
   target:
     - nsis
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

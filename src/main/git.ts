@@ -5,7 +5,7 @@ import { homedir, hostname, userInfo } from 'node:os'
 import { basename, dirname, isAbsolute, join, parse as parsePath, resolve } from 'node:path'
 import { getConfig, getGitSettings, patchGitSettings } from './config'
 import { getValidAuth } from './auth'
-import { gitlabRequest } from './gitlab'
+import { apiRequest } from './api'
 import {
   fingerprint,
   generateEd25519,
@@ -223,7 +223,7 @@ async function sshTarget(): Promise<SshTarget> {
   const cfg = getConfig()
   if (targetCache?.baseUrl === cfg.baseUrl) return targetCache.target
   for (const membership of [true, false]) {
-    const r = await gitlabRequest<{ ssh_url_to_repo?: string }[]>({
+    const r = await apiRequest<{ ssh_url_to_repo?: string }[]>({
       path: '/projects',
       query: { per_page: 1, simple: true, membership: membership || undefined }
     })
@@ -499,7 +499,7 @@ interface RepoProject {
 
 async function getProject(projectId: number): Promise<RepoProject> {
   if (!Number.isInteger(projectId) || projectId <= 0) throw new Error('项目 ID 无效')
-  const r = await gitlabRequest<RepoProject>({ path: `/projects/${projectId}` })
+  const r = await apiRequest<RepoProject>({ path: `/projects/${projectId}` })
   if (!r.ok) throw new Error(r.error)
   return r.data
 }
@@ -520,10 +520,16 @@ async function gitAuthEnv(url: string): Promise<{ env: Record<string, string>; a
     const u = new URL(url)
     const origin = `${u.protocol}//${u.host}/`
     const auth = await getValidAuth()
-    if (auth && u.hostname.toLowerCase() === new URL(cfg.baseUrl).hostname.toLowerCase()) {
+    const hostOk =
+      auth &&
+      (u.hostname.toLowerCase() === new URL(cfg.baseUrl).hostname.toLowerCase() ||
+        (cfg.provider === 'github' &&
+          (u.hostname.toLowerCase() === 'github.com' || u.hostname.toLowerCase().endsWith('.github.com'))))
+    if (hostOk && auth) {
       const token = auth.type === 'pat' ? auth.token : auth.accessToken
-      // GitLab 对 git over HTTP 的 Basic 认证：OAuth 令牌要求用户名为 oauth2，个人访问令牌不校验用户名
-      configs.push([`http.${origin}.extraHeader`, 'Authorization: Basic ' + Buffer.from(`oauth2:${token}`).toString('base64')])
+      // GitHub：x-access-token；GitLab：oauth2（OAuth）/ 任意用户名（PAT）
+      const user = cfg.provider === 'github' ? 'x-access-token' : 'oauth2'
+      configs.push([`http.${origin}.extraHeader`, 'Authorization: Basic ' + Buffer.from(`${user}:${token}`).toString('base64')])
     }
     if (cfg.ignoreTls) configs.push([`http.${origin}.sslVerify`, 'false'])
   } else {
@@ -1227,7 +1233,7 @@ interface MatchProject {
 async function listMembershipProjects(): Promise<MatchProject[]> {
   const out: MatchProject[] = []
   for (let page = 1; page <= 20; page++) {
-    const r = await gitlabRequest<MatchProject[]>({
+    const r = await apiRequest<MatchProject[]>({
       path: '/projects',
       query: { membership: true, simple: true, per_page: 100, page }
     })
@@ -1246,8 +1252,10 @@ function findCloudMatch(remote: string | null, projects: MatchProject[]): MatchP
     const id = remoteIdentity(remote)
     if (id && id.path === p.path_with_namespace.toLowerCase()) {
       try {
-        const host = new URL(getConfig().baseUrl).hostname.toLowerCase()
+        const cfg = getConfig()
+        const host = new URL(cfg.baseUrl).hostname.toLowerCase()
         if (id.host === host) return p
+        if (cfg.provider === 'github' && (id.host === 'github.com' || id.host.endsWith('.github.com'))) return p
       } catch {
         // ignore
       }

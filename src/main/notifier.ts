@@ -1,6 +1,6 @@
 import { BrowserWindow, Notification } from 'electron'
 import { getConfig } from './config'
-import { gitlabRequest } from './gitlab'
+import { apiRequest } from './api'
 
 interface Todo {
   id: number
@@ -45,19 +45,21 @@ export function startNotifier(getWin: () => BrowserWindow | null): void {
   stopNotifier()
   const cfg = getConfig()
   if (!cfg.baseUrl || !cfg.loggedIn) return
+  // GitHub 等无 todos 能力的平台不轮询
+  if (!cfg.capabilities.todos) return
 
   const tick = async (): Promise<void> => {
     if (ticking) return
     const w = getWin()
     if (!w || w.isDestroyed()) return
     const current = getConfig()
-    if (!current.baseUrl || !current.loggedIn) {
+    if (!current.baseUrl || !current.loggedIn || !current.capabilities.todos) {
       stopNotifier()
       return
     }
     ticking = true
     try {
-      const res = await gitlabRequest<Todo[]>({ path: '/todos', query: { state: 'pending', per_page: 50 } })
+      const res = await apiRequest<Todo[]>({ path: '/todos', query: { state: 'pending', per_page: 50 } })
       if (!res.ok || w.isDestroyed()) return
 
       w.webContents.send('todos:count', res.total ?? res.data.length)

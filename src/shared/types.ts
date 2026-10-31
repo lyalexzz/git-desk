@@ -1,4 +1,5 @@
 import type { AiChatRequest, AiConfig, AiConnection, AiPatch, AiResult, AiStreamEvent } from './ai'
+import type { Capabilities } from './capabilities'
 import type {
   CloneEvent,
   CloneRequest,
@@ -17,13 +18,26 @@ import type {
   SshStatus
 } from './git'
 
-export type Platform = 'gitlab' | 'jihu' | 'jihulab' | 'gitlab_com'
+export type Provider = 'gitlab' | 'github'
+
+export type Platform = 'gitlab' | 'jihu' | 'jihulab' | 'gitlab_com' | 'github'
 
 /** token = 个人访问令牌，password = 账号密码，web = 网页登录 */
 export type AuthMethod = 'token' | 'password' | 'web'
 
+export interface AccountSummary {
+  id: string
+  provider: Provider
+  platform: Platform
+  baseUrl: string
+  label: string
+  username: string
+  loggedIn: boolean
+}
+
 export interface AppConfig {
   platform: Platform
+  provider: Provider
   baseUrl: string
   ignoreTls: boolean
   pollMinutes: number
@@ -35,6 +49,9 @@ export interface AppConfig {
   serverVersion: string
   isJihu: boolean
   ai: AiConfig
+  activeAccountId: string | null
+  accounts: AccountSummary[]
+  capabilities: Capabilities
 }
 
 export interface ConfigPatch {
@@ -51,6 +68,15 @@ export interface ConfigPatch {
 }
 
 export type LoginResult = { ok: true; user: { name: string; username: string } } | { ok: false; error: string }
+
+/** 登录时传入的服务器信息（多账号下不先改写当前会话） */
+export interface LoginServer {
+  platform: Platform
+  baseUrl: string
+  ignoreTls: boolean
+  oauthClientId?: string
+  oauthSecret?: string
+}
 
 export type PasswordPageResult = { ok: true } | { ok: false; error: string; cancelled?: boolean }
 
@@ -73,12 +99,15 @@ export type ApiResult<T = unknown> =
 export interface DesktopApi {
   getConfig(): Promise<AppConfig>
   saveConfig(patch: ConfigPatch): Promise<AppConfig>
-  loginWithToken(token: string): Promise<LoginResult>
-  loginWithPassword(username: string, password: string): Promise<LoginResult>
-  loginWithWeb(): Promise<LoginResult>
+  loginWithToken(token: string, server?: LoginServer): Promise<LoginResult>
+  loginWithPassword(username: string, password: string, server?: LoginServer): Promise<LoginResult>
+  loginWithWeb(server?: LoginServer): Promise<LoginResult>
   /** 在应用内打开 GitLab 网页的修改密码页 */
   openPasswordPage(): Promise<PasswordPageResult>
   logout(): Promise<AppConfig>
+  /** 切换已保存的账号会话 */
+  switchAccount(id: string): Promise<AppConfig>
+  removeAccount(id: string): Promise<AppConfig>
   oauthRedirectUri(): Promise<string>
   request<T = unknown>(req: ApiRequest): Promise<ApiResult<T>>
   cancelRequest(id: number): void
