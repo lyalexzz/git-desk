@@ -230,3 +230,13 @@ export interface CiVariable {
   environment_scope: string
   description?: string | null
 }
+
+export interface Group {
+  id: number
+  name: string
+  path: string
+  full_name: string
+  full_path: string
+  parent_id: number | null
+  web_url: string
+}
