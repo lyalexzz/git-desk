@@ -9,6 +9,8 @@ import type { Member, User } from '../types'
 
 type Filter = 'all' | 'active' | 'blocked'
 
+const userKeys = [['users'], ['user-options']]
+
 interface NewUser {
   name: string
   username: string
@@ -48,7 +50,7 @@ function UserList() {
           skip_confirmation: true
         }),
       v.password ? '用户已创建' : '用户已创建，重置密码邮件已发送',
-      [['users']]
+      userKeys
     )
     if (ok) {
       setCreating(false)
@@ -86,7 +88,7 @@ function UserList() {
       </Space>
       <Table<User>
         rowKey="id"
-        loading={users.isLoading}
+        loading={users.isFetching}
         dataSource={users.data?.data}
         pagination={{
           current: page,
@@ -116,20 +118,48 @@ function UserList() {
           {
             title: '操作',
             width: 100,
-            render: (_, u) =>
-              u.state === 'blocked' ? (
-                <Popconfirm title={`解封用户 ${u.name}？`} onConfirm={() => run(() => post(`/users/${u.id}/unblock`), '已解封', [['users']])}>
-                  <a>解封</a>
-                </Popconfirm>
-              ) : (
-                <Popconfirm
-                  title={`封禁用户 ${u.name}？`}
-                  description="封禁后该用户无法登录和访问仓库"
-                  onConfirm={() => run(() => post(`/users/${u.id}/block`), '已封禁', [['users']])}
-                >
-                  <a style={{ color: '#ff4d4f' }}>封禁</a>
-                </Popconfirm>
-              )
+            render: (_, u) => {
+              const act = (action: string, done: string) => () =>
+                run(() => post(`/users/${u.id}/${action}`), done, userKeys)
+              switch (u.state) {
+                case 'active':
+                  return (
+                    <Popconfirm
+                      title={`封禁用户 ${u.name}？`}
+                      description="封禁后该用户无法登录和访问仓库"
+                      onConfirm={act('block', '已封禁')}
+                    >
+                      <a style={{ color: '#ff4d4f' }}>封禁</a>
+                    </Popconfirm>
+                  )
+                case 'blocked':
+                  return (
+                    <Popconfirm title={`解封用户 ${u.name}？`} onConfirm={act('unblock', '已解封')}>
+                      <a>解封</a>
+                    </Popconfirm>
+                  )
+                case 'banned':
+                  return (
+                    <Popconfirm title={`解除禁用用户 ${u.name}？`} onConfirm={act('unban', '已解除禁用')}>
+                      <a>解除禁用</a>
+                    </Popconfirm>
+                  )
+                case 'deactivated':
+                  return (
+                    <Popconfirm title={`重新激活用户 ${u.name}？`} onConfirm={act('activate', '已激活')}>
+                      <a>激活</a>
+                    </Popconfirm>
+                  )
+                case 'blocked_pending_approval':
+                  return (
+                    <Popconfirm title={`批准用户 ${u.name} 的注册？`} onConfirm={act('approve', '已批准')}>
+                      <a>批准</a>
+                    </Popconfirm>
+                  )
+                default:
+                  return '-'
+              }
+            }
           }
         ]}
       />
@@ -222,7 +252,7 @@ function ProjectMembers() {
       ) : (
         <Table<Member>
           rowKey="id"
-          loading={members.isLoading}
+          loading={members.isFetching}
           dataSource={members.data}
           pagination={false}
           columns={[

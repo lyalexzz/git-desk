@@ -1,36 +1,16 @@
 import { useState } from 'react'
-import { Button, Checkbox, Collapse, Descriptions, Drawer, Empty, Modal, Space, Spin, Tabs, Tag } from 'antd'
+import { Button, Checkbox, Descriptions, Drawer, Empty, Modal, Space, Spin, Tabs, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ApiError, get, openExternal, post, put, useAction } from '../api'
 import { MergeStatus, MrState, PipelineStatus, TimeAgo } from '../labels'
 import Notes from './Notes'
+import DiffList from './DiffList'
 import type { Diff, MergeRequest, User } from '../types'
 
 interface Approvals {
   approved_by: { user: User }[]
   approvals_required?: number
   approvals_left?: number
-}
-
-function DiffView({ diff }: { diff: string }) {
-  return (
-    <pre className="diff-view">
-      {diff.split('\n').map((line, i) => {
-        const cls = line.startsWith('@@')
-          ? 'diff-hunk'
-          : line.startsWith('+')
-            ? 'diff-add'
-            : line.startsWith('-')
-              ? 'diff-del'
-              : undefined
-        return (
-          <div key={i} className={cls}>
-            {line || ' '}
-          </div>
-        )
-      })}
-    </pre>
-  )
 }
 
 async function loadDiffs(base: string): Promise<Diff[]> {
@@ -78,7 +58,7 @@ export default function MrDrawer({
   })
 
   const m = mr.data
-  const refresh = [mrKey, approvalsKey, ['mrs']]
+  const refresh = [mrKey, approvalsKey, ['mrs'], ['notes', base], ['todos'], ['count']]
 
   const doMerge = async () => {
     const ok = await run(
@@ -174,20 +154,7 @@ export default function MrDrawer({
                 ) : diffs.error ? (
                   <Empty description={(diffs.error as Error).message} />
                 ) : (
-                  <Collapse
-                    items={(diffs.data ?? []).map((d, i) => ({
-                      key: i,
-                      label: (
-                        <Space>
-                          {d.new_file && <Tag color="green">新增</Tag>}
-                          {d.deleted_file && <Tag color="red">删除</Tag>}
-                          {d.renamed_file && <Tag color="blue">重命名</Tag>}
-                          <span>{d.renamed_file ? `${d.old_path} → ${d.new_path}` : d.new_path}</span>
-                        </Space>
-                      ),
-                      children: d.diff ? <DiffView diff={d.diff} /> : <Empty description="二进制文件或变更过大" />
-                    }))}
-                  />
+                  <DiffList diffs={diffs.data ?? []} />
                 )
               }
             ]}

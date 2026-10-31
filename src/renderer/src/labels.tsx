@@ -66,6 +66,7 @@ const userState: Record<string, TagInfo> = {
   active: ['正常', 'success'],
   blocked: ['已封禁', 'error'],
   ldap_blocked: ['LDAP 封禁', 'error'],
+  banned: ['已禁用（ban）', 'volcano'],
   deactivated: ['已停用', 'default'],
   blocked_pending_approval: ['待审批', 'warning']
 }

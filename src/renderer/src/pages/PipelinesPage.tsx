@@ -70,9 +70,9 @@ function PipelineDrawer({ projectId, pipeline, onClose }: { projectId: number; p
                 <Space>
                   <a onClick={() => setLogJob(j)}>日志</a>
                   {j.status === 'manual' ? (
-                    <a onClick={() => run(() => post(`/projects/${projectId}/jobs/${j.id}/play`), '已触发', [key])}>运行</a>
+                    <a onClick={() => run(() => post(`/projects/${projectId}/jobs/${j.id}/play`), '已触发', [key, ['pipelines']])}>运行</a>
                   ) : ACTIVE.includes(j.status) ? (
-                    <a onClick={() => run(() => post(`/projects/${projectId}/jobs/${j.id}/cancel`), '已取消', [key])}>取消</a>
+                    <a onClick={() => run(() => post(`/projects/${projectId}/jobs/${j.id}/cancel`), '已取消', [key, ['pipelines']])}>取消</a>
                   ) : (
                     <a onClick={() => run(() => post(`/projects/${projectId}/jobs/${j.id}/retry`), '已重试', [key, ['pipelines']])}>重试</a>
                   )}

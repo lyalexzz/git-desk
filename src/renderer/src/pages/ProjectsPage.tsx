@@ -76,6 +76,7 @@ export default function ProjectsPage() {
         rowKey="id"
         loading={projects.isLoading}
         dataSource={projects.data?.data}
+        onRow={(p) => ({ onDoubleClick: () => navigate(`/projects/${p.id}`) })}
         pagination={{
           current: page,
           pageSize,
@@ -101,7 +102,7 @@ export default function ProjectsPage() {
             title: '项目',
             render: (_, p) => (
               <div>
-                <div>{p.name_with_namespace}</div>
+                <a onClick={() => navigate(`/projects/${p.id}`)}>{p.name_with_namespace}</a>
                 {p.description && (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
                     {p.description}
@@ -116,9 +117,10 @@ export default function ProjectsPage() {
           { title: '最后活动', width: 110, dataIndex: 'last_activity_at', render: (v) => <TimeAgo value={v} /> },
           {
             title: '操作',
-            width: 260,
+            width: 300,
             render: (_, p) => (
               <Space>
+                <a onClick={() => navigate(`/projects/${p.id}`)}>代码</a>
                 <a onClick={() => navigate(`/mrs?project=${p.id}`)}>合并请求</a>
                 <a onClick={() => navigate(`/issues?project=${p.id}`)}>Issue</a>
                 <a onClick={() => navigate(`/pipelines?project=${p.id}`)}>流水线</a>

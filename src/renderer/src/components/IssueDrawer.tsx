@@ -20,7 +20,7 @@ export default function IssueDrawer({
   const issue = useQuery({ queryKey: key, queryFn: () => get<Issue>(base), enabled: open })
   const me = useMe()
   const run = useAction()
-  const refresh = [key, ['issues']]
+  const refresh = [key, ['issues'], ['notes', base], ['todos'], ['count']]
   const i = issue.data
 
   return (

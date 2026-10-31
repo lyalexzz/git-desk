@@ -33,6 +33,12 @@ function createWindow(): void {
     openExternal(url)
     return { action: 'deny' }
   })
+  win.webContents.on('will-navigate', (e, url) => {
+    const appUrl = process.env.ELECTRON_RENDERER_URL
+    if (url.startsWith('file://') || (appUrl && url.startsWith(appUrl))) return
+    e.preventDefault()
+    openExternal(url)
+  })
   win.on('closed', () => {
     win = null
   })

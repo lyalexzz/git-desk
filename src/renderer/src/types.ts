@@ -21,6 +21,9 @@ export interface Project {
   star_count: number
   last_activity_at: string
   visibility?: string
+  http_url_to_repo?: string
+  ssh_url_to_repo?: string
+  empty_repo?: boolean
 }
 
 export interface Pipeline {
@@ -130,14 +133,45 @@ export interface UserEvent {
 
 export interface Commit {
   id: string
+  short_id: string
+  title: string
+  message: string
   author_name: string
   author_email: string
   created_at: string
+  committed_date: string
+  parent_ids?: string[]
+  web_url?: string
+  stats?: { additions: number; deletions: number; total: number }
 }
 
 export interface Branch {
   name: string
   default: boolean
+  protected?: boolean
+  merged?: boolean
+  commit?: Commit
+}
+
+export interface RepoTag {
+  name: string
+  message: string | null
+  commit: Commit
+}
+
+export interface TreeItem {
+  id: string
+  name: string
+  type: 'tree' | 'blob' | 'commit'
+  path: string
+}
+
+export interface RepoFile {
+  file_name: string
+  file_path: string
+  size: number
+  encoding: string
+  content: string
 }
 
 export interface Diff {

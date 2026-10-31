@@ -16,6 +16,7 @@ import { ApiError, useMe } from './api'
 import DashboardPage from './pages/DashboardPage'
 import TodosPage from './pages/TodosPage'
 import ProjectsPage from './pages/ProjectsPage'
+import ProjectDetailPage from './pages/ProjectDetailPage'
 import MergeRequestsPage from './pages/MergeRequestsPage'
 import IssuesPage from './pages/IssuesPage'
 import PipelinesPage from './pages/PipelinesPage'
@@ -103,6 +104,7 @@ function MainLayout({ config }: { config: AppConfig }) {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/todos" element={<TodosPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/mrs" element={<MergeRequestsPage />} />
             <Route path="/issues" element={<IssuesPage />} />
             <Route path="/pipelines" element={<PipelinesPage />} />

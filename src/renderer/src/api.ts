@@ -58,16 +58,20 @@ export function useMe() {
 export function useAction() {
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
+  const refresh = (keys: QueryKey[]) =>
+    Promise.all(keys.map((queryKey) => qc.invalidateQueries({ queryKey, refetchType: 'active' }, { cancelRefetch: true })))
   return async (fn: () => Promise<unknown>, success: string, invalidate: QueryKey[] = []): Promise<boolean> => {
     try {
       await fn()
-      message.success(success)
-      await Promise.all(invalidate.map((queryKey) => qc.invalidateQueries({ queryKey })))
-      return true
     } catch (e) {
       message.error((e as Error).message)
       return false
     }
+    message.success(success)
+    await refresh(invalidate)
+    // GitLab 部分写操作（重试流水线、合并、审批、待办等）在后台异步落库，稍后再拉一次
+    if (invalidate.length) setTimeout(() => void refresh(invalidate), 1500)
+    return true
   }
 }
 
