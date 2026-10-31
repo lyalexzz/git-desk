@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  App as AntApp,
   Breadcrumb,
   Button,
   Card,
+  Checkbox,
   Drawer,
   Empty,
   Form,
@@ -10,6 +12,7 @@ import {
   Modal,
   Popconfirm,
   Popover,
+  Progress,
   Result,
   Segmented,
   Select,
@@ -21,7 +24,7 @@ import {
   Typography
 } from 'antd'
 import { ArrowLeftOutlined, CopyOutlined, FileOutlined, FolderFilled, LinkOutlined } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { del, get, getAll, getPage, openExternal, post, useAction } from '../api'
 import { TimeAgo, visibilityText } from '../labels'
@@ -429,18 +432,118 @@ function CommitsTab({ projectId, refName, path, update }: { projectId: number; r
   )
 }
 
+type BranchSort = 'updated_desc' | 'updated_asc' | 'name_asc'
+
+const branchTime = (b: Branch) => (b.commit?.committed_date ? Date.parse(b.commit.committed_date) : 0)
+const deletable = (b: Branch) => !b.default && !b.protected
+
 function BranchesTab({ project, refName, update }: { project: Project; refName: string; update: Update }) {
   const run = useAction()
+  const { message, modal } = AntApp.useApp()
+  const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<BranchSort>('updated_desc')
+  const [onlyMerged, setOnlyMerged] = useState(false)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [selected, setSelected] = useState<string[]>([])
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [creating, setCreating] = useState(false)
   const [form] = Form.useForm<{ branch: string; ref: string }>()
   const key = ['branch-list', project.id]
   const branches = useQuery({
-    queryKey: [...key, search, page],
-    queryFn: () => getPage<Branch>(`/projects/${project.id}/repository/branches`, { search, page, per_page: 20 })
+    queryKey: [...key, search],
+    queryFn: () => getAll<Branch>(`/projects/${project.id}/repository/branches`, { search }, 20)
   })
-  const data = branches.data?.data ?? []
+
+  const data = useMemo(() => {
+    const list = (branches.data ?? []).filter((b) => !onlyMerged || b.merged)
+    if (sort === 'name_asc') return list.sort((a, b) => a.name.localeCompare(b.name))
+    return list.sort((a, b) => (sort === 'updated_desc' ? branchTime(b) - branchTime(a) : branchTime(a) - branchTime(b)))
+  }, [branches.data, sort, onlyMerged])
+
+  const refreshBranches = async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: key }),
+      qc.invalidateQueries({ queryKey: ['branches', project.id] })
+    ])
+  }
+
+  const deleteSelected = async () => {
+    const names = [...selected]
+    const failed: { name: string; error: string }[] = []
+    setProgress({ done: 0, total: names.length })
+    for (const [i, name] of names.entries()) {
+      try {
+        await del(`/projects/${project.id}/repository/branches/${encodeURIComponent(name)}`)
+      } catch (e) {
+        failed.push({ name, error: (e as Error).message })
+      }
+      setProgress({ done: i + 1, total: names.length })
+    }
+    setProgress(null)
+    setSelected(failed.map((f) => f.name))
+    await refreshBranches()
+    const ok = names.length - failed.length
+    if (failed.length === 0) {
+      message.success(`已删除 ${ok} 个分支`)
+    } else {
+      modal.warning({
+        title: `删除完成：成功 ${ok} 个，失败 ${failed.length} 个`,
+        width: 560,
+        content: (
+          <ul style={{ paddingLeft: 20, maxHeight: 300, overflow: 'auto' }}>
+            {failed.map((f) => (
+              <li key={f.name}>
+                <b>{f.name}</b>：{f.error}
+              </li>
+            ))}
+          </ul>
+        )
+      })
+    }
+  }
+
+  const confirmBatchDelete = () => {
+    modal.confirm({
+      title: `确定删除选中的 ${selected.length} 个分支？`,
+      width: 520,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      content: (
+        <>
+          <div style={{ marginBottom: 8 }}>删除后无法恢复：</div>
+          <ul style={{ paddingLeft: 20, maxHeight: 260, overflow: 'auto' }}>
+            {selected.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </>
+      ),
+      onOk: () => void deleteSelected()
+    })
+  }
+
+  const selectMerged = () => {
+    const names = (branches.data ?? []).filter((b) => b.merged && deletable(b)).map((b) => b.name)
+    setSelected(names)
+    if (names.length === 0) message.info('没有可删除的已合并分支')
+  }
+
+  const cleanMerged = () => {
+    modal.confirm({
+      title: '清理所有已合并分支？',
+      width: 520,
+      okText: '确认清理',
+      okButtonProps: { danger: true },
+      content: `将删除所有已合并到默认分支（${project.default_branch}）的分支，受保护分支不受影响。GitLab 会在后台执行，可能需要几秒到几分钟，且无法恢复。`,
+      onOk: () =>
+        run(() => del(`/projects/${project.id}/repository/merged_branches`), '已提交清理任务，稍后刷新查看结果', [
+          key,
+          ['branches', project.id]
+        ])
+    })
+  }
 
   const create = async (v: { branch: string; ref: string }) => {
     const ok = await run(
@@ -460,12 +563,32 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
         <Input.Search
           allowClear
           placeholder="搜索分支"
-          style={{ width: 240 }}
+          style={{ width: 220 }}
           onSearch={(v) => {
             setSearch(v)
             setPage(1)
+            setSelected([])
           }}
         />
+        <Select<BranchSort>
+          value={sort}
+          style={{ width: 130 }}
+          onChange={setSort}
+          options={[
+            { value: 'updated_desc', label: '最近更新在前' },
+            { value: 'updated_asc', label: '最早更新在前' },
+            { value: 'name_asc', label: '按名称' }
+          ]}
+        />
+        <Checkbox
+          checked={onlyMerged}
+          onChange={(e) => {
+            setOnlyMerged(e.target.checked)
+            setPage(1)
+          }}
+        >
+          只看已合并
+        </Checkbox>
         <Button
           type="primary"
           onClick={() => {
@@ -475,17 +598,52 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
         >
           新建分支
         </Button>
+        <Button onClick={selectMerged}>选中已合并分支</Button>
+        <Button danger disabled={selected.length === 0 || progress !== null} onClick={confirmBatchDelete}>
+          批量删除{selected.length ? `（${selected.length}）` : ''}
+        </Button>
+        {selected.length > 0 && progress === null && <a onClick={() => setSelected([])}>取消选择</a>}
+        <Button danger type="dashed" onClick={cleanMerged}>
+          清理已合并分支
+        </Button>
       </Space>
+      {progress && (
+        <Progress
+          percent={Math.round((progress.done / progress.total) * 100)}
+          format={() => `正在删除 ${progress.done}/${progress.total}`}
+          style={{ marginBottom: 12 }}
+        />
+      )}
       <Table<Branch>
         rowKey="name"
         size="small"
-        loading={branches.isLoading}
+        loading={branches.isLoading || branches.isFetching}
         dataSource={data}
+        rowSelection={{
+          selectedRowKeys: selected,
+          preserveSelectedRowKeys: true,
+          onChange: (keys) => setSelected(keys as string[]),
+          getCheckboxProps: (b) => ({
+            disabled: !deletable(b) || progress !== null,
+            title: b.default ? '默认分支不能删除' : b.protected ? '受保护分支不能删除' : undefined
+          })
+        }}
+        onChange={(_, __, sorter) => {
+          const s = Array.isArray(sorter) ? sorter[0] : sorter
+          if (s?.columnKey === 'updated') {
+            setSort(s.order === 'ascend' ? 'updated_asc' : 'updated_desc')
+          }
+        }}
         pagination={{
           current: page,
-          pageSize: 20,
-          total: pageTotal(page, 20, data.length, branches.data?.total ?? null),
-          onChange: setPage
+          pageSize,
+          total: data.length,
+          showSizeChanger: true,
+          showTotal: (n) => `共 ${n} 个分支`,
+          onChange: (p, s) => {
+            setPage(p)
+            setPageSize(s)
+          }
         }}
         columns={[
           {
@@ -501,7 +659,15 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
           },
           { title: '最近提交', ellipsis: true, render: (_, b) => b.commit?.title },
           { title: '作者', width: 120, render: (_, b) => b.commit?.author_name },
-          { title: '时间', width: 110, render: (_, b) => <TimeAgo value={b.commit?.committed_date} /> },
+          {
+            title: '更新时间',
+            key: 'updated',
+            width: 120,
+            sorter: true,
+            sortDirections: ['descend', 'ascend', 'descend'],
+            sortOrder: sort === 'updated_desc' ? 'descend' : sort === 'updated_asc' ? 'ascend' : null,
+            render: (_, b) => <TimeAgo value={b.commit?.committed_date} />
+          },
           {
             title: '操作',
             width: 190,
@@ -515,7 +681,10 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
                     description="删除后无法恢复"
                     onConfirm={() =>
                       run(
-                        () => del(`/projects/${project.id}/repository/branches/${encodeURIComponent(b.name)}`),
+                        async () => {
+                          await del(`/projects/${project.id}/repository/branches/${encodeURIComponent(b.name)}`)
+                          setSelected((s) => s.filter((n) => n !== b.name))
+                        },
                         '分支已删除',
                         [key, ['branches', project.id]]
                       )
