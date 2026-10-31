@@ -150,6 +150,7 @@ export interface Branch {
   default: boolean
   protected?: boolean
   merged?: boolean
+  can_push?: boolean
   commit?: Commit
 }
 
@@ -164,6 +165,18 @@ export interface TreeItem {
   name: string
   type: 'tree' | 'blob' | 'commit'
   path: string
+}
+
+export interface TreeEntry extends TreeItem {
+  mode: string
+}
+
+export interface Compare {
+  commit: Commit | null
+  commits: Commit[]
+  diffs: (Diff & { a_mode: string; b_mode: string })[]
+  compare_timeout: boolean
+  compare_same_ref: boolean
 }
 
 export interface RepoFile {

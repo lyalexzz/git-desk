@@ -32,6 +32,7 @@ import CodeView from '../components/CodeView'
 import DiffList from '../components/DiffList'
 import Markdown from '../components/Markdown'
 import ProjectSettings from '../components/ProjectSettings'
+import RollbackModal, { RevertCommitModal } from '../components/RollbackModal'
 import type { Branch, Commit, Diff, Project, RepoFile, RepoTag, TreeItem } from '../types'
 
 type Update = (patch: Record<string, string | undefined>) => void
@@ -317,7 +318,21 @@ function CodeTab({ project, refName, path, type, update }: { project: Project; r
   )
 }
 
-function CommitDrawer({ projectId, sha, onClose, update }: { projectId: number; sha?: string; onClose: () => void; update: Update }) {
+function CommitDrawer({
+  projectId,
+  sha,
+  onClose,
+  update,
+  onRollback,
+  onRevert
+}: {
+  projectId: number
+  sha?: string
+  onClose: () => void
+  update: Update
+  onRollback: (c: Commit) => void
+  onRevert: (c: Commit) => void
+}) {
   const commit = useQuery({
     queryKey: ['commit', projectId, sha],
     queryFn: () => get<Commit>(`/projects/${projectId}/repository/commits/${sha}`),
@@ -346,6 +361,8 @@ function CommitDrawer({ projectId, sha, onClose, update }: { projectId: number; 
             >
               浏览此版本代码
             </Button>
+            <Button onClick={() => onRollback(c)}>回滚到此提交</Button>
+            <Button onClick={() => onRevert(c)}>撤销此提交</Button>
             {c.web_url && <Button onClick={() => openExternal(c.web_url!)}>网页</Button>}
           </Space>
         )
@@ -381,6 +398,8 @@ function CommitsTab({ projectId, refName, path, update }: { projectId: number; r
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(30)
   const [sha, setSha] = useState<string>()
+  const [rollback, setRollback] = useState<string>()
+  const [revert, setRevert] = useState<Commit>()
   useEffect(() => setPage(1), [refName, path])
 
   const commits = useQuery({
@@ -425,10 +444,31 @@ function CommitsTab({ projectId, refName, path, update }: { projectId: number; r
           { title: '提交信息', dataIndex: 'title', ellipsis: true },
           { title: '作者', dataIndex: 'author_name', width: 140 },
           { title: '时间', dataIndex: 'committed_date', width: 120, render: (v) => <TimeAgo value={v} /> },
-          { title: 'SHA', dataIndex: 'short_id', width: 100, render: (v) => <Typography.Text code>{v}</Typography.Text> }
+          { title: 'SHA', dataIndex: 'short_id', width: 100, render: (v) => <Typography.Text code>{v}</Typography.Text> },
+          {
+            title: '操作',
+            width: 180,
+            render: (_, c) => (
+              <Space onClick={(e) => e.stopPropagation()}>
+                <a onClick={() => setRollback(c.id)}>回滚到此提交</a>
+                <a onClick={() => setRevert(c)}>撤销</a>
+              </Space>
+            )
+          }
         ]}
       />
-      <CommitDrawer projectId={projectId} sha={sha} onClose={() => setSha(undefined)} update={update} />
+      <CommitDrawer
+        projectId={projectId}
+        sha={sha}
+        onClose={() => setSha(undefined)}
+        update={update}
+        onRollback={(c) => setRollback(c.id)}
+        onRevert={setRevert}
+      />
+      {rollback && (
+        <RollbackModal projectId={projectId} branch={refName} target={rollback} onClose={() => setRollback(undefined)} />
+      )}
+      {revert && <RevertCommitModal projectId={projectId} commit={revert} branch={refName} onClose={() => setRevert(undefined)} />}
     </>
   )
 }
@@ -450,6 +490,7 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
   const [selected, setSelected] = useState<string[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [creating, setCreating] = useState(false)
+  const [rollback, setRollback] = useState<string>()
   const [form] = Form.useForm<{ branch: string; ref: string }>()
   const key = ['branch-list', project.id]
   const branches = useQuery({
@@ -671,11 +712,12 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
           },
           {
             title: '操作',
-            width: 190,
+            width: 220,
             render: (_, b) => (
               <Space>
                 <a onClick={() => update({ tab: 'code', ref: b.name, path: undefined, type: undefined })}>代码</a>
                 <a onClick={() => update({ tab: 'commits', ref: b.name, path: undefined, type: undefined })}>提交</a>
+                <a onClick={() => setRollback(b.name)}>回滚</a>
                 {!b.default && !b.protected && (
                   <Popconfirm
                     title={`删除分支 ${b.name}？`}
@@ -709,6 +751,7 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
           </Form.Item>
         </Form>
       </Modal>
+      {rollback && <RollbackModal projectId={project.id} branch={rollback} onClose={() => setRollback(undefined)} />}
     </>
   )
 }
