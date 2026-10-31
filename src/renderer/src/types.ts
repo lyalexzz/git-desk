@@ -41,6 +41,12 @@ export interface Pipeline {
   duration?: number | null
 }
 
+export interface DiffRefs {
+  base_sha: string
+  start_sha: string
+  head_sha: string
+}
+
 export interface MergeRequest {
   id: number
   iid: number
@@ -62,6 +68,7 @@ export interface MergeRequest {
   references: { full: string }
   user_notes_count: number
   head_pipeline?: Pipeline | null
+  diff_refs?: DiffRefs
 }
 
 export interface Issue {
@@ -100,6 +107,30 @@ export interface Note {
   author: User
   created_at: string
   system: boolean
+}
+
+export interface NotePosition {
+  base_sha: string
+  start_sha: string
+  head_sha: string
+  old_path: string
+  new_path: string
+  position_type: 'text' | string
+  old_line: number | null
+  new_line: number | null
+}
+
+export interface DiscussionNote extends Note {
+  resolvable?: boolean
+  resolved?: boolean
+  type?: string | null
+  position?: NotePosition | null
+}
+
+export interface Discussion {
+  id: string
+  individual_note: boolean
+  notes: DiscussionNote[]
 }
 
 export interface Todo {

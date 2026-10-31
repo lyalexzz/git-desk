@@ -1,5 +1,21 @@
 import type { AiChatRequest, AiConfig, AiConnection, AiPatch, AiResult, AiStreamEvent } from './ai'
-import type { CloneEvent, CloneRequest, GitEnv, GitIdentity, GitResult, LocalKey, OpenTarget, SshStatus } from './git'
+import type {
+  CloneEvent,
+  CloneRequest,
+  GitEnv,
+  GitIdentity,
+  GitLocalBranch,
+  GitRepoStatus,
+  GitResult,
+  GitLocalCommit,
+  LocalDiffRequest,
+  LocalLogRequest,
+  LocalKey,
+  LocalShowRequest,
+  OpenTarget,
+  ScanResult,
+  SshStatus
+} from './git'
 
 export type Platform = 'gitlab' | 'jihu' | 'jihulab' | 'gitlab_com'
 
@@ -95,4 +111,22 @@ export interface DesktopApi {
   gitForget(projectId: number): Promise<void>
   gitOpen(projectId: number, target: OpenTarget): Promise<GitResult<null>>
   gitPull(projectId: number): Promise<GitResult<string>>
+  gitStatus(projectId: number): Promise<GitResult<GitRepoStatus>>
+  gitStage(projectId: number, paths: string[]): Promise<GitResult<null>>
+  gitUnstage(projectId: number, paths: string[]): Promise<GitResult<null>>
+  gitCommit(projectId: number, message: string): Promise<GitResult<string>>
+  gitPush(projectId: number): Promise<GitResult<string>>
+  gitBranches(projectId: number): Promise<GitResult<GitLocalBranch[]>>
+  gitCheckout(projectId: number, branch: string): Promise<GitResult<string>>
+  gitDiff(req: LocalDiffRequest): Promise<GitResult<string>>
+  gitLog(req: LocalLogRequest): Promise<GitResult<GitLocalCommit[]>>
+  /** 单个提交的说明 + patch */
+  gitShow(req: LocalShowRequest): Promise<GitResult<{ commit: GitLocalCommit; diff: string }>>
+  /** 扫描本地目录下的 Git 仓库，并按 origin 与当前服务器项目匹配；匹配成功会自动写入克隆记录 */
+  gitScan(root: string): Promise<GitResult<ScanResult>>
+  gitScanDir(): Promise<string | null>
+  /** 手动把本地路径关联到项目（会校验 origin） */
+  gitLink(projectId: number, dir: string): Promise<GitResult<null>>
+  /** 直接打开任意本地路径（未匹配仓库也可用） */
+  gitOpenPath(dir: string, target: OpenTarget): Promise<GitResult<null>>
 }

@@ -68,5 +68,87 @@ export type CloneEvent =
 
 export type OpenTarget = 'folder' | 'vscode' | 'cursor' | 'terminal'
 
+/** 单个文件的 index/worktree 状态（git status --porcelain 字母） */
+export interface GitFileStatus {
+  path: string
+  /** 索引区状态，空格表示未暂存变更 */
+  index: string
+  /** 工作区状态 */
+  worktree: string
+  /** 重命名时的原路径 */
+  from?: string
+}
+
+export interface GitRepoStatus {
+  branch: string
+  upstream: string | null
+  ahead: number
+  behind: number
+  staged: GitFileStatus[]
+  unstaged: GitFileStatus[]
+  untracked: GitFileStatus[]
+  dirty: boolean
+}
+
+export interface GitLocalBranch {
+  name: string
+  current: boolean
+}
+
+export type LocalDiffStaged = 'worktree' | 'staged'
+
+export interface LocalDiffRequest {
+  projectId: number
+  /** worktree = git diff；staged = git diff --cached */
+  staged?: LocalDiffStaged
+  path?: string
+}
+
+export interface GitLocalCommit {
+  id: string
+  shortId: string
+  subject: string
+  body: string
+  authorName: string
+  authorEmail: string
+  date: string
+  parents: string[]
+}
+
+export interface LocalLogRequest {
+  projectId: number
+  /** 分支名或 HEAD；默认当前分支 */
+  ref?: string
+  skip?: number
+  limit?: number
+}
+
+export interface LocalShowRequest {
+  projectId: number
+  sha: string
+}
+
+/** 扫描到的本地 Git 仓库，以及与当前服务器项目的匹配结果 */
+export interface ScannedRepo {
+  dir: string
+  name: string
+  remote: string | null
+  branch: string | null
+  /** 匹配到的 GitLab 项目；未匹配则为 null */
+  projectId: number | null
+  projectName: string | null
+  /** 已写入本地克隆记录 */
+  linked: boolean
+}
+
+export interface ScanResult {
+  root: string
+  repos: ScannedRepo[]
+  matched: number
+  unmatched: number
+  linked: number
+  truncated: boolean
+}
+
 export const GIT_DOWNLOAD_URL = 'https://git-scm.com/download/win'
 export const GIT_MIRROR_URL = 'https://registry.npmmirror.com/binary.html?path=git-for-windows/'

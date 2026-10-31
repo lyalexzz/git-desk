@@ -42,7 +42,21 @@ const api: DesktopApi = {
   gitClones: () => ipcRenderer.invoke('git:clones'),
   gitForget: (projectId) => ipcRenderer.invoke('git:forget', projectId),
   gitOpen: (projectId, target) => ipcRenderer.invoke('git:open', projectId, target),
-  gitPull: (projectId) => ipcRenderer.invoke('git:pull', projectId)
+  gitPull: (projectId) => ipcRenderer.invoke('git:pull', projectId),
+  gitStatus: (projectId) => ipcRenderer.invoke('git:status', projectId),
+  gitStage: (projectId, paths) => ipcRenderer.invoke('git:stage', projectId, paths),
+  gitUnstage: (projectId, paths) => ipcRenderer.invoke('git:unstage', projectId, paths),
+  gitCommit: (projectId, message) => ipcRenderer.invoke('git:commit', projectId, message),
+  gitPush: (projectId) => ipcRenderer.invoke('git:push', projectId),
+  gitBranches: (projectId) => ipcRenderer.invoke('git:branches', projectId),
+  gitCheckout: (projectId, branch) => ipcRenderer.invoke('git:checkout', projectId, branch),
+  gitDiff: (req) => ipcRenderer.invoke('git:diff', req),
+  gitLog: (req) => ipcRenderer.invoke('git:log', req),
+  gitShow: (req) => ipcRenderer.invoke('git:show', req),
+  gitScan: (root) => ipcRenderer.invoke('git:scan', root),
+  gitScanDir: () => ipcRenderer.invoke('git:scan-dir'),
+  gitLink: (projectId, dir) => ipcRenderer.invoke('git:link', projectId, dir),
+  gitOpenPath: (dir, target) => ipcRenderer.invoke('git:open-path', dir, target)
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Alert, Badge, Layout, Menu, Space, Spin, Typography } from 'antd'
+import { Alert, Badge, Button, Layout, Menu, Space, Spin, Typography } from 'antd'
 import {
   BranchesOutlined,
   CheckSquareOutlined,
   DashboardOutlined,
+  DesktopOutlined,
   ExclamationCircleOutlined,
   FolderOutlined,
   PullRequestOutlined,
@@ -13,6 +14,9 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, useMe } from './api'
+import CommandPalette, { type PaletteOpenTarget } from './components/CommandPalette'
+import IssueDrawer from './components/IssueDrawer'
+import MrDrawer from './components/MrDrawer'
 import LoginPage from './pages/LoginPage'
 import { authMethodText } from './labels'
 import type { AppConfig } from '../../shared/types'
@@ -21,6 +25,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const TodosPage = lazy(() => import('./pages/TodosPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'))
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'))
 const MergeRequestsPage = lazy(() => import('./pages/MergeRequestsPage'))
 const IssuesPage = lazy(() => import('./pages/IssuesPage'))
 const PipelinesPage = lazy(() => import('./pages/PipelinesPage'))
@@ -34,12 +39,25 @@ function MainLayout({ config }: { config: AppConfig }) {
   const location = useLocation()
   const me = useMe()
   const [todoCount, setTodoCount] = useState(0)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [detail, setDetail] = useState<PaletteOpenTarget | null>(null)
 
   useEffect(() => window.desktop.onNavigate((p) => navigate(p)), [navigate])
   useEffect(() => window.desktop.onTodoCount(setTodoCount), [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const selected = '/' + (location.pathname.split('/')[1] ?? '')
   const authFailed = me.error instanceof ApiError && me.error.status === 401
+  const shortcut = navigator.platform.toLowerCase().includes('mac') ? '⌘K' : 'Ctrl+K'
 
   if (authFailed) return <LoginPage />
 
@@ -67,6 +85,7 @@ function MainLayout({ config }: { config: AppConfig }) {
               )
             },
             { key: '/projects', icon: <FolderOutlined />, label: '项目' },
+            { key: '/workspace', icon: <DesktopOutlined />, label: '本地仓库' },
             { key: '/mrs', icon: <PullRequestOutlined />, label: '合并请求' },
             { key: '/issues', icon: <ExclamationCircleOutlined />, label: 'Issue' },
             { key: '/pipelines', icon: <BranchesOutlined />, label: '流水线' },
@@ -90,12 +109,17 @@ function MainLayout({ config }: { config: AppConfig }) {
             {config.baseUrl}
             {config.serverVersion && ` · ${productName} ${config.serverVersion}`}
           </Typography.Text>
-          <span>
-            {me.data ? `${me.data.name}（${me.data.username}）${me.data.is_admin ? ' · 管理员' : ''}` : ''}
-            {config.authMethod && (
-              <Typography.Text type="secondary"> · {authMethodText[config.authMethod]}</Typography.Text>
-            )}
-          </span>
+          <Space>
+            <Button type="text" size="small" onClick={() => setPaletteOpen(true)}>
+              搜索 <Typography.Text type="secondary">{shortcut}</Typography.Text>
+            </Button>
+            <span>
+              {me.data ? `${me.data.name}（${me.data.username}）${me.data.is_admin ? ' · 管理员' : ''}` : ''}
+              {config.authMethod && (
+                <Typography.Text type="secondary"> · {authMethodText[config.authMethod]}</Typography.Text>
+              )}
+            </span>
+          </Space>
         </Header>
         <Content className="no-scrollbar" style={{ padding: 16, background: '#f5f5f5' }}>
           {me.error && !authFailed && (
@@ -107,6 +131,7 @@ function MainLayout({ config }: { config: AppConfig }) {
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id" element={<ProjectDetailPage />} />
+              <Route path="/workspace" element={<WorkspacePage />} />
               <Route path="/mrs" element={<MergeRequestsPage />} />
               <Route path="/issues" element={<IssuesPage />} />
               <Route path="/pipelines" element={<PipelinesPage />} />
@@ -117,6 +142,17 @@ function MainLayout({ config }: { config: AppConfig }) {
           </Suspense>
         </Content>
       </Layout>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onOpen={setDetail} />
+      <MrDrawer
+        projectId={detail?.type === 'mr' ? detail.projectId : undefined}
+        iid={detail?.type === 'mr' ? detail.iid : undefined}
+        onClose={() => setDetail(null)}
+      />
+      <IssueDrawer
+        projectId={detail?.type === 'issue' ? detail.projectId : undefined}
+        iid={detail?.type === 'issue' ? detail.iid : undefined}
+        onClose={() => setDetail(null)}
+      />
     </Layout>
   )
 }

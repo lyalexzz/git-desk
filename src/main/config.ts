@@ -30,6 +30,8 @@ export interface StoredGit {
   clones?: Record<string, string>
   /** 最近一次 SSH 测试成功的 `${baseUrl}|${host}:${port}` */
   sshVerified?: string
+  /** 最近一次本地仓库扫描的根目录 */
+  scanDir?: string
 }
 
 interface StoredAi {

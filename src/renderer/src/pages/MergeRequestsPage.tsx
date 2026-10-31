@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { getPage, useMe } from '../api'
 import { MergeStatus, MrState, TimeAgo } from '../labels'
+import CreateMrModal from '../components/CreateMrModal'
 import MrDrawer from '../components/MrDrawer'
 import ProjectSelect from '../components/ProjectSelect'
 import type { MergeRequest } from '../types'
@@ -20,6 +21,7 @@ export default function MergeRequestsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [open, setOpen] = useState<MergeRequest>()
+  const [creating, setCreating] = useState(false)
 
   const setParam = (k: string, v?: string) => {
     const next = new URLSearchParams(params)
@@ -53,9 +55,14 @@ export default function MergeRequestsPage() {
     <Card
       title="合并请求"
       extra={
-        <Button onClick={() => void mrs.refetch()} loading={mrs.isFetching}>
-          刷新
-        </Button>
+        <Space>
+          <Button type="primary" onClick={() => setCreating(true)}>
+            新建合并请求
+          </Button>
+          <Button onClick={() => void mrs.refetch()} loading={mrs.isFetching}>
+            刷新
+          </Button>
+        </Space>
       }
     >
       <Space wrap style={{ marginBottom: 16 }}>
@@ -129,6 +136,12 @@ export default function MergeRequestsPage() {
         ]}
       />
       <MrDrawer projectId={open?.project_id} iid={open?.iid} onClose={() => setOpen(undefined)} />
+      <CreateMrModal
+        open={creating}
+        defaultProjectId={projectId}
+        onClose={() => setCreating(false)}
+        onCreated={(mr) => setOpen(mr)}
+      />
     </Card>
   )
 }

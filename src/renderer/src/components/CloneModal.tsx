@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, App as AntApp, Button, Form, Input, Modal, Progress, Radio, Result, Space, Typography } from 'antd'
 import { CloudDownloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { GitMissing, useGitEnv, useSshStatus } from './GitSshSettings'
 import type { CloneEvent, CloneProtocol, OpenTarget } from '../../../shared/git'
 import type { Project } from '../types'
@@ -35,6 +36,7 @@ function OpenButtons({ projectId }: { projectId: number }) {
 function CloneModal({ project, localDir, onClose }: { project: Project; localDir?: string; onClose: () => void }) {
   const { message, modal } = AntApp.useApp()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const env = useGitEnv()
   const ssh = useSshStatus()
   const cloneDir = useQuery({ queryKey: ['clone-dir'], queryFn: () => window.desktop.gitCloneDir() })
@@ -157,7 +159,16 @@ function CloneModal({ project, localDir, onClose }: { project: Project; localDir
           extra={
             <Space direction="vertical" size={12}>
               <OpenButtons projectId={project.id} />
-              <Space>
+              <Space wrap>
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    onClose()
+                    navigate(`/workspace?project=${project.id}`)
+                  }}
+                >
+                  在本地仓库打开
+                </Button>
                 <Button loading={pulling} onClick={pull}>
                   拉取更新（git pull）
                 </Button>

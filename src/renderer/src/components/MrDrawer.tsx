@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { Button, Checkbox, Descriptions, Drawer, Empty, Modal, Space, Spin, Tabs, Tag } from 'antd'
+import { useEffect, useState } from 'react'
+import { Button, Checkbox, Descriptions, Drawer, Empty, Form, Input, Modal, Space, Spin, Tabs, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, get, getAll, openExternal, post, put, useAction } from '../api'
+import { ApiError, get, getAll, openExternal, post, put, useAction, useMe } from '../api'
 import { MergeStatus, MrState, PipelineStatus, TimeAgo } from '../labels'
-import Notes from './Notes'
+import MrDiscussions from './MrDiscussions'
 import DiffList from './DiffList'
 import AiReview from './AiReview'
-import type { Diff, MergeRequest, User } from '../types'
+import type { Diff, Discussion, MergeRequest, User } from '../types'
 
 interface Approvals {
   approved_by: { user: User }[]
@@ -14,11 +14,17 @@ interface Approvals {
   approvals_left?: number
 }
 
+interface EditForm {
+  title: string
+  description: string
+  draft: boolean
+  assignToMe: boolean
+}
+
 async function loadDiffs(base: string, signal?: AbortSignal): Promise<Diff[]> {
   try {
     return await getAll<Diff>(`${base}/diffs`, {}, 10, signal)
   } catch (e) {
-    // GitLab < 15.7 没有 /diffs 接口
     if (e instanceof ApiError && e.status === 404) {
       return (await get<{ changes: Diff[] }>(`${base}/changes`, undefined, signal)).changes
     }
@@ -37,14 +43,18 @@ export default function MrDrawer({
 }) {
   const open = projectId != null && iid != null
   const base = `/projects/${projectId}/merge_requests/${iid}`
+  const me = useMe()
   const [tab, setTab] = useState('overview')
   const [mergeOpen, setMergeOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [squash, setSquash] = useState(false)
   const [removeBranch, setRemoveBranch] = useState(true)
+  const [form] = Form.useForm<EditForm>()
   const run = useAction()
 
   const mrKey = ['mr', projectId, iid]
   const approvalsKey = ['mr-approvals', projectId, iid]
+  const discussionsKey = ['discussions', base]
   const mr = useQuery({ queryKey: mrKey, queryFn: ({ signal }) => get<MergeRequest>(base, undefined, signal), enabled: open })
   const approvals = useQuery({
     queryKey: approvalsKey,
@@ -57,9 +67,24 @@ export default function MrDrawer({
     queryFn: ({ signal }) => loadDiffs(base, signal),
     enabled: open && (tab === 'changes' || tab === 'ai')
   })
+  const discussions = useQuery({
+    queryKey: discussionsKey,
+    queryFn: ({ signal }) => getAll<Discussion>(`${base}/discussions`, {}, 10, signal),
+    enabled: open && (tab === 'changes' || tab === 'notes')
+  })
 
   const m = mr.data
-  const refresh = [mrKey, approvalsKey, ['mrs'], ['notes', base], ['todos'], ['count']]
+  const refresh = [mrKey, approvalsKey, discussionsKey, ['mrs'], ['notes', base], ['todos'], ['count']]
+
+  useEffect(() => {
+    if (!editOpen || !m) return
+    form.setFieldsValue({
+      title: m.title.replace(/^Draft:\s*/i, ''),
+      description: m.description ?? '',
+      draft: Boolean(m.draft),
+      assignToMe: m.assignees.some((a) => a.id === me.data?.id)
+    })
+  }, [editOpen, m, me.data?.id, form])
 
   const doMerge = async () => {
     const ok = await run(
@@ -68,6 +93,22 @@ export default function MrDrawer({
       refresh
     )
     if (ok) setMergeOpen(false)
+  }
+
+  const saveEdit = async () => {
+    const v = await form.validateFields()
+    const bare = v.title.replace(/^Draft:\s*/i, '')
+    const ok = await run(
+      () =>
+        put(base, {
+          title: v.draft ? `Draft: ${bare}` : bare,
+          description: v.description,
+          assignee_ids: v.assignToMe && me.data ? [me.data.id] : []
+        }),
+      '已保存',
+      refresh
+    )
+    if (ok) setEditOpen(false)
   }
 
   return (
@@ -91,6 +132,7 @@ export default function MrDrawer({
                 </Button>
                 <Button onClick={() => run(() => post(`${base}/approve`), '已批准', refresh)}>批准</Button>
                 <Button onClick={() => run(() => post(`${base}/unapprove`), '已撤销批准', refresh)}>撤销批准</Button>
+                <Button onClick={() => setEditOpen(true)}>编辑</Button>
                 <Button danger onClick={() => run(() => put(base, { state_event: 'close' }), '已关闭', refresh)}>
                   关闭
                 </Button>
@@ -127,6 +169,9 @@ export default function MrDrawer({
                         {m.head_pipeline ? <PipelineStatus value={m.head_pipeline.status} /> : '无'}
                       </Descriptions.Item>
                       <Descriptions.Item label="作者">{m.author.name}</Descriptions.Item>
+                      <Descriptions.Item label="指派人">
+                        {m.assignees.map((u) => u.name).join('、') || '无'}
+                      </Descriptions.Item>
                       <Descriptions.Item label="审核人">
                         {m.reviewers?.map((u) => u.name).join('、') || '无'}
                       </Descriptions.Item>
@@ -146,7 +191,7 @@ export default function MrDrawer({
               {
                 key: 'notes',
                 label: `讨论（${m.user_notes_count}）`,
-                children: <Notes basePath={base} />
+                children: <MrDiscussions basePath={base} />
               },
               {
                 key: 'changes',
@@ -156,7 +201,12 @@ export default function MrDrawer({
                 ) : diffs.error ? (
                   <Empty description={(diffs.error as Error).message} />
                 ) : (
-                  <DiffList diffs={diffs.data ?? []} />
+                  <DiffList
+                    diffs={diffs.data ?? []}
+                    basePath={base}
+                    diffRefs={m.diff_refs}
+                    discussions={discussions.data ?? []}
+                  />
                 )
               },
               {
@@ -169,7 +219,7 @@ export default function MrDrawer({
                     diffs={diffs.data}
                     diffsLoading={diffs.isLoading}
                     diffsError={diffs.error as Error | null}
-                    invalidate={[['notes', base], mrKey]}
+                    invalidate={[['notes', base], discussionsKey, mrKey]}
                   />
                 )
               }
@@ -188,6 +238,23 @@ export default function MrDrawer({
                 合并后删除源分支
               </Checkbox>
             </Space>
+          </Modal>
+
+          <Modal title="编辑合并请求" open={editOpen} onOk={() => void saveEdit()} onCancel={() => setEditOpen(false)} okText="保存">
+            <Form form={form} layout="vertical">
+              <Form.Item label="标题" name="title" rules={[{ required: true, message: '请填写标题' }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item label="描述" name="description">
+                <Input.TextArea rows={6} placeholder="支持 Markdown" />
+              </Form.Item>
+              <Form.Item name="draft" valuePropName="checked">
+                <Checkbox>草稿</Checkbox>
+              </Form.Item>
+              <Form.Item name="assignToMe" valuePropName="checked">
+                <Checkbox>指派给我</Checkbox>
+              </Form.Item>
+            </Form>
           </Modal>
         </>
       )}

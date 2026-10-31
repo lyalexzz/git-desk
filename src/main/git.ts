@@ -24,10 +24,19 @@ import type {
   CloneEvent,
   CloneRequest,
   GitEnv,
+  GitFileStatus,
   GitIdentity,
+  GitLocalBranch,
+  GitRepoStatus,
   GitResult,
+  GitLocalCommit,
+  LocalDiffRequest,
+  LocalLogRequest,
   LocalKey,
+  LocalShowRequest,
   OpenTarget,
+  ScannedRepo,
+  ScanResult,
   SshStatus,
   SshTarget
 } from '../shared/git'
@@ -603,12 +612,40 @@ function normalizeRemote(url: string): string {
     .toLowerCase()
 }
 
+/** 把 SSH / HTTPS remote 归一成 host/path，便于对照云端仓库 */
+function remoteIdentity(url: string): { host: string; path: string } | null {
+  const s = url.trim()
+  if (!s) return null
+  const scp = /^[^@\s]+@([^:/\s]+):(.+)$/.exec(s)
+  if (scp) {
+    return {
+      host: scp[1].toLowerCase(),
+      path: scp[2].replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
+    }
+  }
+  try {
+    const u = new URL(s.includes('://') ? s : `https://${s}`)
+    const path = u.pathname.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
+    if (!u.hostname || !path) return null
+    return { host: u.hostname.toLowerCase(), path }
+  } catch {
+    return null
+  }
+}
+
+function remotesMatch(a: string, b: string): boolean {
+  if (normalizeRemote(a) === normalizeRemote(b)) return true
+  const ia = remoteIdentity(a)
+  const ib = remoteIdentity(b)
+  return Boolean(ia && ib && ia.host === ib.host && ia.path === ib.path)
+}
+
 async function sameRepo(dir: string, project: RepoProject): Promise<boolean> {
   if (!existsSync(join(dir, '.git'))) return false
   const r = await run(await requireGit(), ['-C', dir, 'remote', 'get-url', 'origin'], { timeout: 10_000 })
   if (r.code !== 0) return false
-  const remote = normalizeRemote(r.stdout)
-  return [project.ssh_url_to_repo, project.http_url_to_repo].some((u) => u && normalizeRemote(u) === remote)
+  const remote = r.stdout.trim()
+  return [project.ssh_url_to_repo, project.http_url_to_repo].some((u) => u && remotesMatch(remote, u))
 }
 
 function recordClone(projectId: number, dir: string): void {
@@ -817,6 +854,522 @@ async function openClone(projectId: number, target: OpenTarget): Promise<GitResu
   }
 }
 
+function parsePorcelainPath(rest: string): { path: string; from?: string } {
+  const arrow = rest.indexOf(' -> ')
+  if (arrow >= 0) {
+    return { from: rest.slice(0, arrow).replace(/^"|"$/g, ''), path: rest.slice(arrow + 4).replace(/^"|"$/g, '') }
+  }
+  return { path: rest.replace(/^"|"$/g, '') }
+}
+
+function parseStatus(stdout: string): GitRepoStatus {
+  const staged: GitFileStatus[] = []
+  const unstaged: GitFileStatus[] = []
+  const untracked: GitFileStatus[] = []
+  let branch = 'HEAD'
+  let upstream: string | null = null
+  let ahead = 0
+  let behind = 0
+
+  for (const raw of stdout.split(/\r?\n/)) {
+    if (!raw) continue
+    if (raw.startsWith('## ')) {
+      const head = raw.slice(3)
+      const m = head.match(/^(\S+?)(?:\.\.\.(\S+))?(?:\s+\[(.+)\])?$/)
+      if (m) {
+        branch = m[1] === 'HEAD' || m[1].startsWith('(HEAD') ? 'HEAD' : m[1]
+        if (m[1].startsWith('(no branch') || m[1].startsWith('(HEAD detached')) branch = 'HEAD'
+        else if (!m[1].startsWith('(')) branch = m[1]
+        upstream = m[2] ?? null
+        if (m[3]) {
+          const a = m[3].match(/ahead\s+(\d+)/)
+          const b = m[3].match(/behind\s+(\d+)/)
+          if (a) ahead = Number(a[1])
+          if (b) behind = Number(b[1])
+        }
+      } else {
+        branch = head.split(/\s/)[0] || 'HEAD'
+      }
+      continue
+    }
+    if (raw.length < 3) continue
+    const index = raw[0]
+    const worktree = raw[1]
+    const { path, from } = parsePorcelainPath(raw.slice(3))
+    const file: GitFileStatus = { path, index, worktree, from }
+    if (index === '?' && worktree === '?') {
+      untracked.push(file)
+      continue
+    }
+    if (index !== ' ' && index !== '?') staged.push(file)
+    if (worktree !== ' ' && worktree !== '?') unstaged.push(file)
+  }
+
+  return {
+    branch,
+    upstream,
+    ahead,
+    behind,
+    staged,
+    unstaged,
+    untracked,
+    dirty: staged.length + unstaged.length + untracked.length > 0
+  }
+}
+
+function sanitizePaths(paths: string[]): string[] {
+  const out: string[] = []
+  for (const p of paths) {
+    const s = String(p ?? '').trim()
+    if (!s || s.startsWith('-') || s.includes('\0') || s.includes('..')) continue
+    out.push(s)
+  }
+  return out
+}
+
+async function status(projectId: number): Promise<GitResult<GitRepoStatus>> {
+  try {
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const r = await run(git, ['-C', dir, 'status', '--porcelain=v1', '-b', '--untracked-files=all'], { timeout: 30_000 })
+    if (r.code !== 0) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    return { ok: true, data: parseStatus(r.stdout) }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function stage(projectId: number, paths: string[]): Promise<GitResult<null>> {
+  try {
+    const list = sanitizePaths(paths)
+    if (list.length === 0) return { ok: false, error: '没有可暂存的文件' }
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const r = await run(git, ['-C', dir, 'add', '--', ...list], { timeout: 60_000 })
+    if (r.code !== 0) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function unstage(projectId: number, paths: string[]): Promise<GitResult<null>> {
+  try {
+    const list = sanitizePaths(paths)
+    if (list.length === 0) return { ok: false, error: '没有可取消暂存的文件' }
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const r = await run(git, ['-C', dir, 'restore', '--staged', '--', ...list], { timeout: 60_000 })
+    if (r.code !== 0) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function commit(projectId: number, message: string): Promise<GitResult<string>> {
+  try {
+    const msg = String(message ?? '').trim()
+    if (!msg) return { ok: false, error: '请填写提交说明' }
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const st = await status(projectId)
+    if (!st.ok) return st
+    if (st.data.staged.length === 0) return { ok: false, error: '暂存区为空，请先暂存文件' }
+    const r = await run(git, ['-C', dir, 'commit', '-m', msg], { timeout: 60_000 })
+    const out = `${r.stdout}\n${r.stderr}`.trim()
+    if (r.code !== 0) return { ok: false, error: gitExplain(out) }
+    return { ok: true, data: out.split('\n')[0] || '已提交' }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function push(projectId: number): Promise<GitResult<string>> {
+  try {
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const remote = await run(git, ['-C', dir, 'remote', 'get-url', 'origin'], { timeout: 10_000 })
+    if (remote.code !== 0) return { ok: false, error: '本地仓库没有 origin 远端' }
+    const auth = await gitAuthEnv(remote.stdout.trim())
+    const r = await run(git, [...auth.args, '-C', dir, 'push'], { timeout: 10 * 60_000, env: childEnv(auth.env) })
+    const out = `${r.stdout}\n${r.stderr}`.trim()
+    if (r.code === 0) return { ok: true, data: /Everything up-to-date/i.test(out) ? '已经是最新，无需推送' : '已推送到远端' }
+    if (r.timedOut) return { ok: false, error: '推送超时' }
+    if (/\[rejected\].*non-fast-forward|failed to push some refs|Updates were rejected/i.test(out)) {
+      return { ok: false, error: '远端有新的提交，无法快进推送。请先拉取并处理后再推送。' }
+    }
+    if (/no upstream branch|has no upstream branch/i.test(out)) {
+      return { ok: false, error: '当前分支没有关联远端分支。请在终端执行 git push -u origin HEAD。' }
+    }
+    return { ok: false, error: gitExplain(out) }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function branches(projectId: number): Promise<GitResult<GitLocalBranch[]>> {
+  try {
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const r = await run(git, ['-C', dir, 'branch', '--list', '--format=%(refname:short)%09%(HEAD)'], { timeout: 15_000 })
+    if (r.code !== 0) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    const list: GitLocalBranch[] = []
+    for (const line of r.stdout.split(/\r?\n/)) {
+      if (!line.trim()) continue
+      const [name, head] = line.split('\t')
+      if (!name) continue
+      list.push({ name, current: head === '*' })
+    }
+    return { ok: true, data: list }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function checkout(projectId: number, branch: string): Promise<GitResult<string>> {
+  try {
+    const name = String(branch ?? '').trim()
+    if (!name || !validBranch(name)) return { ok: false, error: '分支名不合法' }
+    const git = await requireGit()
+    const dir = recordedDir(Number(projectId))
+    const st = await status(projectId)
+    if (!st.ok) return st
+    if (st.data.dirty) return { ok: false, error: '工作区有未提交的修改，请先提交或处理后再切换分支' }
+    const r = await run(git, ['-C', dir, 'checkout', name], { timeout: 30_000 })
+    const out = `${r.stdout}\n${r.stderr}`.trim()
+    if (r.code !== 0) {
+      if (/Please commit your changes or stash them|local changes.*would be overwritten/i.test(out)) {
+        return { ok: false, error: '工作区有未提交的修改，请先提交或处理后再切换分支' }
+      }
+      return { ok: false, error: gitExplain(out) }
+    }
+    return { ok: true, data: `已切换到 ${name}` }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function diff(req: LocalDiffRequest): Promise<GitResult<string>> {
+  try {
+    const git = await requireGit()
+    const dir = recordedDir(Number(req.projectId))
+    const args = ['-C', dir, 'diff', '--no-ext-diff', '--no-color']
+    if (req.staged === 'staged') args.push('--cached')
+    if (req.path) {
+      const list = sanitizePaths([req.path])
+      if (list.length === 0) return { ok: false, error: '路径不合法' }
+      args.push('--', list[0])
+    }
+    const r = await run(git, args, { timeout: 60_000 })
+    if (r.code !== 0 && r.code !== 1) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    return { ok: true, data: r.stdout }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+function validSha(sha: string): boolean {
+  return /^[0-9a-f]{7,40}$/i.test(sha)
+}
+
+function parseLogLine(line: string): GitLocalCommit | null {
+  const parts = line.split('\t')
+  if (parts.length < 6) return null
+  const [id, shortId, authorName, authorEmail, date, subject, parents = ''] = parts
+  if (!id || !shortId) return null
+  return {
+    id,
+    shortId,
+    subject: subject ?? '',
+    body: '',
+    authorName: authorName ?? '',
+    authorEmail: authorEmail ?? '',
+    date: date ?? '',
+    parents: parents.trim() ? parents.trim().split(/\s+/) : []
+  }
+}
+
+async function logCommits(req: LocalLogRequest): Promise<GitResult<GitLocalCommit[]>> {
+  try {
+    const git = await requireGit()
+    const dir = recordedDir(Number(req.projectId))
+    const limit = Math.min(100, Math.max(1, Number(req.limit) || 30))
+    const skip = Math.max(0, Number(req.skip) || 0)
+    const ref = String(req.ref ?? 'HEAD').trim() || 'HEAD'
+    if (ref !== 'HEAD' && !validBranch(ref) && !validSha(ref)) {
+      return { ok: false, error: '分支或提交引用不合法' }
+    }
+    // 主题放最后，避免说明里的 Tab 打乱字段；正文在 show 时再取
+    const fmt = '%H%x09%h%x09%an%x09%ae%x09%aI%x09%s%x09%P'
+    const r = await run(
+      git,
+      ['-C', dir, 'log', `--pretty=format:${fmt}`, `--max-count=${limit}`, `--skip=${skip}`, ref],
+      { timeout: 60_000 }
+    )
+    if (r.code !== 0) return { ok: false, error: gitExplain(`${r.stdout}\n${r.stderr}`) }
+    const data = r.stdout
+      .split(/\r?\n/)
+      .map((l) => l.trimEnd())
+      .filter(Boolean)
+      .map(parseLogLine)
+      .filter((c): c is GitLocalCommit => c != null)
+    return { ok: true, data }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function showCommit(req: LocalShowRequest): Promise<GitResult<{ commit: GitLocalCommit; diff: string }>> {
+  try {
+    const sha = String(req.sha ?? '').trim()
+    if (!validSha(sha)) return { ok: false, error: '提交 SHA 不合法' }
+    const git = await requireGit()
+    const dir = recordedDir(Number(req.projectId))
+    const meta = await run(
+      git,
+      ['-C', dir, 'show', '-s', '--pretty=format:%H%x09%h%x09%an%x09%ae%x09%aI%x09%s%x09%P', sha],
+      { timeout: 30_000 }
+    )
+    if (meta.code !== 0) return { ok: false, error: gitExplain(`${meta.stdout}\n${meta.stderr}`) }
+    const commit = parseLogLine(meta.stdout.split(/\r?\n/)[0] ?? '')
+    if (!commit) return { ok: false, error: '无法解析该提交' }
+    const bodyR = await run(git, ['-C', dir, 'show', '-s', '--pretty=format:%b', sha], { timeout: 15_000 })
+    if (bodyR.code === 0) commit.body = bodyR.stdout.replace(/\s+$/, '')
+    const patch = await run(
+      git,
+      ['-C', dir, 'show', '--no-color', '--no-ext-diff', '--format=', '--patch', '--find-renames', sha],
+      { timeout: 60_000 }
+    )
+    if (patch.code !== 0 && patch.code !== 1) {
+      return { ok: false, error: gitExplain(`${patch.stdout}\n${patch.stderr}`) }
+    }
+    return { ok: true, data: { commit, diff: patch.stdout } }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+const SCAN_SKIP = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'out',
+  'target',
+  'vendor',
+  '.cache',
+  '.venv',
+  'venv',
+  '__pycache__',
+  '.idea',
+  '.vscode',
+  '.next',
+  'coverage'
+])
+const SCAN_MAX_DEPTH = 5
+const SCAN_MAX_REPOS = 150
+
+function isGitRepo(dir: string): boolean {
+  const git = join(dir, '.git')
+  if (!existsSync(git)) return false
+  try {
+    const st = statSync(git)
+    return st.isDirectory() || st.isFile() // worktree 时 .git 可能是文件
+  } catch {
+    return false
+  }
+}
+
+function collectGitDirs(root: string): { dirs: string[]; truncated: boolean } {
+  const dirs: string[] = []
+  let truncated = false
+  const walk = (dir: string, depth: number): void => {
+    if (truncated || dirs.length >= SCAN_MAX_REPOS) {
+      truncated = true
+      return
+    }
+    if (isGitRepo(dir)) {
+      dirs.push(dir)
+      return // 不再向下扫子模块外侧副本，避免重复；子模块内部若需可再扫
+    }
+    if (depth >= SCAN_MAX_DEPTH) return
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const name of entries) {
+      if (SCAN_SKIP.has(name) || name.startsWith('.')) continue
+      const full = join(dir, name)
+      try {
+        if (!statSync(full).isDirectory()) continue
+      } catch {
+        continue
+      }
+      walk(full, depth + 1)
+      if (truncated) return
+    }
+  }
+  walk(root, 0)
+  return { dirs, truncated }
+}
+
+interface MatchProject {
+  id: number
+  name_with_namespace: string
+  path_with_namespace: string
+  ssh_url_to_repo?: string
+  http_url_to_repo?: string
+}
+
+async function listMembershipProjects(): Promise<MatchProject[]> {
+  const out: MatchProject[] = []
+  for (let page = 1; page <= 20; page++) {
+    const r = await gitlabRequest<MatchProject[]>({
+      path: '/projects',
+      query: { membership: true, simple: true, per_page: 100, page }
+    })
+    if (!r.ok) throw new Error(r.error)
+    out.push(...r.data)
+    if (r.data.length < 100) break
+  }
+  return out
+}
+
+function findCloudMatch(remote: string | null, projects: MatchProject[]): MatchProject | null {
+  if (!remote) return null
+  for (const p of projects) {
+    const urls = [p.ssh_url_to_repo, p.http_url_to_repo].filter(Boolean) as string[]
+    if (urls.some((u) => remotesMatch(remote, u))) return p
+    const id = remoteIdentity(remote)
+    if (id && id.path === p.path_with_namespace.toLowerCase()) {
+      try {
+        const host = new URL(getConfig().baseUrl).hostname.toLowerCase()
+        if (id.host === host) return p
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return null
+}
+
+async function probeLocalRepo(git: string, dir: string): Promise<{ remote: string | null; branch: string | null }> {
+  const remote = await run(git, ['-C', dir, 'remote', 'get-url', 'origin'], { timeout: 8_000 })
+  const branch = await run(git, ['-C', dir, 'branch', '--show-current'], { timeout: 8_000 })
+  return {
+    remote: remote.code === 0 ? remote.stdout.trim() || null : null,
+    branch: branch.code === 0 ? branch.stdout.trim() || null : null
+  }
+}
+
+async function scanLocalRepos(rootInput: string): Promise<GitResult<ScanResult>> {
+  try {
+    const git = await requireGit()
+    const root = checkDir(rootInput)
+    if (!existsSync(root) || !statSync(root).isDirectory()) {
+      return { ok: false, error: `目录不存在：${root}` }
+    }
+    patchGitSettings((g) => {
+      g.scanDir = root
+    })
+
+    const { dirs, truncated } = collectGitDirs(root)
+    const projects = await listMembershipProjects()
+    const repos: ScannedRepo[] = []
+    let matched = 0
+    let linked = 0
+
+    for (const dir of dirs) {
+      const { remote, branch } = await probeLocalRepo(git, dir)
+      const cloud = findCloudMatch(remote, projects)
+      let wasLinked = false
+      if (cloud) {
+        matched++
+        const existing = getGitSettings().clones?.[cloneKey(cloud.id)]
+        if (existing !== dir) {
+          recordClone(cloud.id, dir)
+          linked++
+          wasLinked = true
+        } else {
+          wasLinked = true
+        }
+      }
+      repos.push({
+        dir,
+        name: basename(dir),
+        remote,
+        branch,
+        projectId: cloud?.id ?? null,
+        projectName: cloud?.name_with_namespace ?? null,
+        linked: wasLinked
+      })
+    }
+
+    repos.sort((a, b) => {
+      if (Boolean(a.projectId) !== Boolean(b.projectId)) return a.projectId ? -1 : 1
+      return a.name.localeCompare(b.name, 'zh')
+    })
+
+    return {
+      ok: true,
+      data: {
+        root,
+        repos,
+        matched,
+        unmatched: repos.length - matched,
+        linked,
+        truncated
+      }
+    }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function linkClone(projectId: number, dirInput: string): Promise<GitResult<null>> {
+  try {
+    const dir = checkDir(dirInput)
+    if (!isGitRepo(dir)) return { ok: false, error: '该文件夹不是 Git 仓库' }
+    const project = await getProject(Number(projectId))
+    if (!(await sameRepo(dir, project))) {
+      return { ok: false, error: '本地 origin 与该云端项目地址不一致，无法关联' }
+    }
+    recordClone(project.id, dir)
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+async function openPath(dirInput: string, target: OpenTarget): Promise<GitResult<null>> {
+  try {
+    const dir = checkDir(dirInput)
+    if (!existsSync(dir)) return { ok: false, error: `路径不存在：${dir}` }
+    if (target === 'folder') {
+      const err = await shell.openPath(dir)
+      return err ? { ok: false, error: err } : { ok: true, data: null }
+    }
+    const detached = { detached: true, stdio: 'ignore' as const, env: childEnv() }
+    if (target === 'vscode' || target === 'cursor') {
+      const exe = (await detect()).editorPaths[target]
+      if (!exe) return { ok: false, error: `没有找到 ${target === 'vscode' ? 'VS Code' : 'Cursor'}` }
+      spawn(exe, [dir], detached).unref()
+      return { ok: true, data: null }
+    }
+    if (target === 'terminal') {
+      if (isWin) spawn('powershell.exe', ['-NoExit'], { ...detached, cwd: dir }).unref()
+      else return { ok: false, error: '当前系统暂不支持' }
+      return { ok: true, data: null }
+    }
+    return { ok: false, error: '不支持的打开方式' }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
 function wrap<T>(fn: () => Promise<GitResult<T>>): Promise<GitResult<T>> {
   return fn().catch((e: Error) => ({ ok: false as const, error: e.message }))
 }
@@ -863,4 +1416,18 @@ export function registerGitIpc(getWin: () => BrowserWindow | null): void {
   })
   ipcMain.handle('git:open', (_e, projectId: number, target: OpenTarget) => openClone(projectId, target))
   ipcMain.handle('git:pull', (_e, projectId: number) => pull(projectId))
+  ipcMain.handle('git:status', (_e, projectId: number) => status(projectId))
+  ipcMain.handle('git:stage', (_e, projectId: number, paths: string[]) => stage(projectId, paths))
+  ipcMain.handle('git:unstage', (_e, projectId: number, paths: string[]) => unstage(projectId, paths))
+  ipcMain.handle('git:commit', (_e, projectId: number, message: string) => commit(projectId, message))
+  ipcMain.handle('git:push', (_e, projectId: number) => push(projectId))
+  ipcMain.handle('git:branches', (_e, projectId: number) => branches(projectId))
+  ipcMain.handle('git:checkout', (_e, projectId: number, branch: string) => checkout(projectId, branch))
+  ipcMain.handle('git:diff', (_e, req: LocalDiffRequest) => diff(req))
+  ipcMain.handle('git:log', (_e, req: LocalLogRequest) => logCommits(req))
+  ipcMain.handle('git:show', (_e, req: LocalShowRequest) => showCommit(req))
+  ipcMain.handle('git:scan', (_e, root: string) => scanLocalRepos(String(root ?? '')))
+  ipcMain.handle('git:scan-dir', () => getGitSettings().scanDir ?? null)
+  ipcMain.handle('git:link', (_e, projectId: number, dir: string) => linkClone(projectId, String(dir ?? '')))
+  ipcMain.handle('git:open-path', (_e, dir: string, target: OpenTarget) => openPath(String(dir ?? ''), target))
 }
