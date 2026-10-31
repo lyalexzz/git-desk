@@ -1,4 +1,5 @@
 import type { AiChatRequest, AiConfig, AiConnection, AiPatch, AiResult, AiStreamEvent } from './ai'
+import type { CloneEvent, CloneRequest, GitEnv, GitIdentity, GitResult, LocalKey, OpenTarget, SshStatus } from './git'
 
 export type Platform = 'gitlab' | 'jihu' | 'jihulab' | 'gitlab_com'
 
@@ -67,4 +68,24 @@ export interface DesktopApi {
   aiChat(req: AiChatRequest): Promise<void>
   aiCancel(id: string): Promise<void>
   onAiStream(cb: (e: AiStreamEvent) => void): () => void
+  gitEnv(refresh?: boolean): Promise<GitEnv>
+  sshStatus(): Promise<GitResult<SshStatus>>
+  /** 为当前服务器生成专用密钥；已存在时直接返回，不会覆盖 */
+  sshGenerate(username: string): Promise<GitResult<{ key: LocalKey; created: boolean; warning?: string }>>
+  sshWriteConfig(): Promise<GitResult<{ path: string; backup?: string; conflict: boolean }>>
+  sshTest(): Promise<GitResult<string>>
+  gitIdentity(): Promise<GitResult<GitIdentity>>
+  gitSetIdentity(id: GitIdentity): Promise<GitResult<GitIdentity>>
+  gitCloneDir(): Promise<string>
+  gitSetCloneDir(dir: string): Promise<GitResult<string>>
+  chooseDir(defaultPath?: string): Promise<string | null>
+  /** 开始克隆，进度通过 onCloneEvent 按 id 推送 */
+  gitClone(req: CloneRequest): Promise<void>
+  gitCancel(id: string): Promise<void>
+  onCloneEvent(cb: (e: CloneEvent) => void): () => void
+  /** 当前服务器下已记录的本地克隆：项目 ID -> 路径 */
+  gitClones(): Promise<Record<number, string>>
+  gitForget(projectId: number): Promise<void>
+  gitOpen(projectId: number, target: OpenTarget): Promise<GitResult<null>>
+  gitPull(projectId: number): Promise<GitResult<string>>
 }

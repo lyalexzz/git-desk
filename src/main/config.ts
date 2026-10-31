@@ -21,6 +21,15 @@ interface StoredConfig {
   /** 旧版本只保存了个人访问令牌 */
   tokenEnc?: string
   ai?: StoredAi
+  git?: StoredGit
+}
+
+export interface StoredGit {
+  cloneDir?: string
+  /** `${baseUrl}#${projectId}` -> 本地克隆路径；项目 ID 只在同一服务器内唯一 */
+  clones?: Record<string, string>
+  /** 最近一次 SSH 测试成功的 `${baseUrl}|${host}:${port}` */
+  sshVerified?: string
 }
 
 interface StoredAi {
@@ -112,6 +121,18 @@ export function setAuth(auth: AuthState | null, serverVersion?: string): void {
 export function getOAuthClient(): { clientId: string; clientSecret: string } {
   const s = read()
   return { clientId: s.oauthClientId, clientSecret: decrypt(s.oauthSecret) }
+}
+
+export function getGitSettings(): StoredGit {
+  return { ...read().git }
+}
+
+export function patchGitSettings(fn: (g: StoredGit) => void): void {
+  const s = read()
+  const g: StoredGit = { ...s.git }
+  fn(g)
+  s.git = g
+  write(s)
 }
 
 export function normalizeAiBaseUrl(url: string): string {

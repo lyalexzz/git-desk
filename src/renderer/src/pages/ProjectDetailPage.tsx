@@ -33,6 +33,7 @@ import DiffList from '../components/DiffList'
 import Markdown from '../components/Markdown'
 import ProjectSettings from '../components/ProjectSettings'
 import RollbackModal, { RevertCommitModal } from '../components/RollbackModal'
+import CloneButton from '../components/CloneModal'
 import type { Branch, Commit, Diff, Project, RepoFile, RepoTag, TreeItem } from '../types'
 
 type Update = (patch: Record<string, string | undefined>) => void
@@ -870,6 +871,7 @@ export default function ProjectDetailPage() {
             </div>
           </Space>
           <Space wrap>
+            {!empty && <CloneButton project={p} />}
             <Popover trigger="click" title="克隆仓库" content={<CloneBox project={p} />}>
               <Button icon={<CopyOutlined />}>克隆</Button>
             </Popover>

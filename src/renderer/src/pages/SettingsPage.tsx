@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../api'
 import { authMethodText, platforms } from '../labels'
 import AiSettings from '../components/AiSettings'
+import GitSshSettings from '../components/GitSshSettings'
 import type { ConfigPatch } from '../../../shared/types'
 
 export default function SettingsPage() {
@@ -67,6 +68,8 @@ export default function SettingsPage() {
           </Button>
         </Form>
       </Card>
+
+      <GitSshSettings />
 
       <AiSettings />
     </Space>

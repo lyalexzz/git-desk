@@ -5,6 +5,7 @@ import { gitlabRequest } from './gitlab'
 import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
 import { cancelChat, listModels, streamChat, testAi } from './ai'
+import { registerGitIpc } from './git'
 import type { ApiRequest, ConfigPatch, LoginResult } from '../shared/types'
 import type { AiChatRequest, AiConnection } from '../shared/ai'
 
@@ -98,6 +99,7 @@ if (!app.requestSingleInstanceLock()) {
       void streamChat(e.sender, req)
     })
     ipcMain.handle('ai:cancel', (_e, id: string) => cancelChat(id))
+    registerGitIpc(() => win)
 
     createWindow()
     startNotifier(() => win)
