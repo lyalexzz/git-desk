@@ -5,6 +5,7 @@ import { ApiError, get, openExternal, post, put, useAction } from '../api'
 import { MergeStatus, MrState, PipelineStatus, TimeAgo } from '../labels'
 import Notes from './Notes'
 import DiffList from './DiffList'
+import AiReview from './AiReview'
 import type { Diff, MergeRequest, User } from '../types'
 
 interface Approvals {
@@ -54,7 +55,7 @@ export default function MrDrawer({
   const diffs = useQuery({
     queryKey: ['mr-diffs', projectId, iid],
     queryFn: () => loadDiffs(base),
-    enabled: open && tab === 'changes'
+    enabled: open && (tab === 'changes' || tab === 'ai')
   })
 
   const m = mr.data
@@ -100,6 +101,7 @@ export default function MrDrawer({
                 重新打开
               </Button>
             )}
+            <Button onClick={() => setTab('ai')}>AI 审核</Button>
           </Space>
 
           <Tabs
@@ -155,6 +157,20 @@ export default function MrDrawer({
                   <Empty description={(diffs.error as Error).message} />
                 ) : (
                   <DiffList diffs={diffs.data ?? []} />
+                )
+              },
+              {
+                key: 'ai',
+                label: 'AI 审核',
+                children: (
+                  <AiReview
+                    base={base}
+                    mr={m}
+                    diffs={diffs.data}
+                    diffsLoading={diffs.isLoading}
+                    diffsError={diffs.error as Error | null}
+                    invalidate={[['notes', base], mrKey]}
+                  />
                 )
               }
             ]}

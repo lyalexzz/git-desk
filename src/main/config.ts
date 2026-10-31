@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { AppConfig, AuthMethod, ConfigPatch, Platform } from '../shared/types'
+import { DEFAULT_AI_MAX_CHARS, DEFAULT_REVIEW_PROMPT, type AiConfig, type AiPatch } from '../shared/ai'
 
 export type AuthState =
   | { type: 'pat'; token: string }
@@ -19,6 +20,27 @@ interface StoredConfig {
   serverVersion?: string
   /** 旧版本只保存了个人访问令牌 */
   tokenEnc?: string
+  ai?: StoredAi
+}
+
+interface StoredAi {
+  baseUrl: string
+  apiKey?: string
+  model: string
+  temperature: number | null
+  /** 空字符串表示使用默认提示词 */
+  systemPrompt: string
+  ignoreTls: boolean
+  maxChars: number
+}
+
+const aiDefaults: StoredAi = {
+  baseUrl: '',
+  model: '',
+  temperature: null,
+  systemPrompt: '',
+  ignoreTls: false,
+  maxChars: DEFAULT_AI_MAX_CHARS
 }
 
 const defaults: StoredConfig = {
@@ -92,6 +114,53 @@ export function getOAuthClient(): { clientId: string; clientSecret: string } {
   return { clientId: s.oauthClientId, clientSecret: decrypt(s.oauthSecret) }
 }
 
+export function normalizeAiBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '')
+}
+
+function readAi(): StoredAi {
+  return { ...aiDefaults, ...read().ai }
+}
+
+export function getAiSettings(): StoredAi & { apiKey: string; systemPrompt: string } {
+  const a = readAi()
+  return { ...a, apiKey: decrypt(a.apiKey), systemPrompt: a.systemPrompt || DEFAULT_REVIEW_PROMPT }
+}
+
+function aiConfig(): AiConfig {
+  const a = readAi()
+  return {
+    baseUrl: a.baseUrl,
+    model: a.model,
+    temperature: a.temperature,
+    systemPrompt: a.systemPrompt || DEFAULT_REVIEW_PROMPT,
+    ignoreTls: a.ignoreTls,
+    maxChars: a.maxChars,
+    hasApiKey: Boolean(a.apiKey),
+    configured: Boolean(a.baseUrl && a.model)
+  }
+}
+
+function patchAi(s: StoredConfig, patch: AiPatch): void {
+  const a: StoredAi = { ...aiDefaults, ...s.ai }
+  if (patch.baseUrl !== undefined) a.baseUrl = normalizeAiBaseUrl(patch.baseUrl)
+  if (patch.model !== undefined) a.model = patch.model.trim()
+  if (patch.temperature !== undefined) {
+    a.temperature = patch.temperature === null ? null : Math.max(0, Math.min(2, patch.temperature))
+  }
+  if (patch.systemPrompt !== undefined) {
+    a.systemPrompt = patch.systemPrompt.trim() === DEFAULT_REVIEW_PROMPT.trim() ? '' : patch.systemPrompt.trim()
+  }
+  if (patch.ignoreTls !== undefined) a.ignoreTls = patch.ignoreTls
+  if (patch.maxChars !== undefined) {
+    a.maxChars = Math.max(5000, Math.min(1_000_000, Math.round(patch.maxChars || DEFAULT_AI_MAX_CHARS)))
+  }
+  const key = patch.apiKey?.trim()
+  if (key) a.apiKey = encrypt(key)
+  else if (patch.clearApiKey) delete a.apiKey
+  s.ai = a
+}
+
 export function getConfig(): AppConfig {
   const s = read()
   const auth = getAuth()
@@ -107,7 +176,8 @@ export function getConfig(): AppConfig {
     loggedIn: auth !== null,
     authMethod,
     serverVersion: s.serverVersion ?? '',
-    isJihu: s.platform === 'jihu' || s.platform === 'jihulab' || /-jh\b/i.test(s.serverVersion ?? '')
+    isJihu: s.platform === 'jihu' || s.platform === 'jihulab' || /-jh\b/i.test(s.serverVersion ?? ''),
+    ai: aiConfig()
   }
 }
 
@@ -132,6 +202,7 @@ export function saveConfig(patch: ConfigPatch): AppConfig {
     if (secret) s.oauthSecret = encrypt(secret)
     else if (patch.clearOAuthSecret) delete s.oauthSecret
   }
+  if (patch.ai) patchAi(s, patch.ai)
   write(s)
   return getConfig()
 }

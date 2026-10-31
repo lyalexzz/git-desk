@@ -4,7 +4,9 @@ import { getConfig, saveConfig } from './config'
 import { gitlabRequest } from './gitlab'
 import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
+import { cancelChat, listModels, streamChat, testAi } from './ai'
 import type { ApiRequest, ConfigPatch, LoginResult } from '../shared/types'
+import type { AiChatRequest, AiConnection } from '../shared/ai'
 
 let win: BrowserWindow | null = null
 
@@ -90,6 +92,12 @@ if (!app.requestSingleInstanceLock()) {
     })
     ipcMain.handle('api:request', (_e, req: ApiRequest) => gitlabRequest(req))
     ipcMain.handle('shell:open', (_e, url: string) => openExternal(url))
+    ipcMain.handle('ai:models', (_e, conn: AiConnection) => listModels(conn))
+    ipcMain.handle('ai:test', (_e, conn: AiConnection) => testAi(conn))
+    ipcMain.handle('ai:chat', (e, req: AiChatRequest) => {
+      void streamChat(e.sender, req)
+    })
+    ipcMain.handle('ai:cancel', (_e, id: string) => cancelChat(id))
 
     createWindow()
     startNotifier(() => win)

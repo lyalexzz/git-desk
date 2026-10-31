@@ -18,7 +18,12 @@ const api: DesktopApi = {
   request: (req) => ipcRenderer.invoke('api:request', req),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   onNavigate: (cb) => subscribe('navigate', cb),
-  onTodoCount: (cb) => subscribe('todos:count', cb)
+  onTodoCount: (cb) => subscribe('todos:count', cb),
+  aiListModels: (conn) => ipcRenderer.invoke('ai:models', conn),
+  aiTest: (conn) => ipcRenderer.invoke('ai:test', conn),
+  aiChat: (req) => ipcRenderer.invoke('ai:chat', req),
+  aiCancel: (id) => ipcRenderer.invoke('ai:cancel', id),
+  onAiStream: (cb) => subscribe('ai:stream', cb)
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

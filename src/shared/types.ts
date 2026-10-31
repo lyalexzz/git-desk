@@ -1,3 +1,5 @@
+import type { AiChatRequest, AiConfig, AiConnection, AiPatch, AiResult, AiStreamEvent } from './ai'
+
 export type Platform = 'gitlab' | 'jihu' | 'jihulab' | 'gitlab_com'
 
 /** token = 个人访问令牌，password = 账号密码，web = 网页登录 */
@@ -15,6 +17,7 @@ export interface AppConfig {
   authMethod: AuthMethod | null
   serverVersion: string
   isJihu: boolean
+  ai: AiConfig
 }
 
 export interface ConfigPatch {
@@ -27,6 +30,7 @@ export interface ConfigPatch {
   /** 留空表示不修改，除非 clearOAuthSecret 为 true */
   oauthSecret?: string
   clearOAuthSecret?: boolean
+  ai?: AiPatch
 }
 
 export type LoginResult = { ok: true; user: { name: string; username: string } } | { ok: false; error: string }
@@ -57,4 +61,10 @@ export interface DesktopApi {
   openExternal(url: string): Promise<void>
   onNavigate(cb: (path: string) => void): () => void
   onTodoCount(cb: (count: number) => void): () => void
+  aiListModels(conn: AiConnection): Promise<AiResult<{ models: string[]; baseUrl: string }>>
+  aiTest(conn: AiConnection): Promise<AiResult<string>>
+  /** 开始流式对话，结果通过 onAiStream 按 id 推送 */
+  aiChat(req: AiChatRequest): Promise<void>
+  aiCancel(id: string): Promise<void>
+  onAiStream(cb: (e: AiStreamEvent) => void): () => void
 }
