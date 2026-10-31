@@ -26,11 +26,36 @@ function gitlabMessage(data: unknown): string {
   return typeof m === 'string' ? m : JSON.stringify(m)
 }
 
+function safeApiPath(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('//') && !path.includes('://') && !/[\r\n\\]/.test(path)
+}
+
+const inflight = new Set<AbortController>()
+const byId = new Map<number, AbortController>()
+const pendingCancel = new Set<number>()
+
+export function cancelGitlab(id: number): void {
+  if (!Number.isInteger(id)) return
+  const ac = byId.get(id)
+  if (ac) ac.abort()
+  else if (pendingCancel.size < 200) pendingCancel.add(id)
+}
+
+/** 退出或窗口关闭时打断所有进行中的 GitLab 请求，避免进程被套接字拖住 */
+export function cancelAllGitlab(): void {
+  for (const ac of inflight) ac.abort()
+  pendingCancel.clear()
+}
+
+function isAbort(e: NodeJS.ErrnoException, signal: AbortSignal): boolean {
+  return signal.aborted || e.name === 'AbortError' || e.code === 'ABORT_ERR'
+}
+
 export async function gitlabRequest<T = unknown>(req: ApiRequest): Promise<ApiResult<T>> {
   const cfg = getConfig()
   let auth = await getValidAuth()
   if (!cfg.baseUrl || !auth) return { ok: false, status: 401, error: '尚未登录' }
-  if (!req.path.startsWith('/')) return { ok: false, status: 0, error: `非法的 API 路径：${req.path}` }
+  if (!safeApiPath(req.path)) return { ok: false, status: 0, error: '非法的 API 路径' }
 
   let url: URL
   try {
@@ -42,8 +67,16 @@ export async function gitlabRequest<T = unknown>(req: ApiRequest): Promise<ApiRe
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v))
   }
   const body = req.body === undefined ? undefined : JSON.stringify(req.body)
+  const ac = new AbortController()
+  const id = typeof req.requestId === 'number' && Number.isInteger(req.requestId) ? req.requestId : undefined
+  inflight.add(ac)
+  if (id !== undefined) {
+    if (pendingCancel.delete(id)) ac.abort()
+    byId.set(id, ac)
+  }
 
   try {
+    if (ac.signal.aborted) return { ok: false, status: 0, error: '已取消' }
     const send = (a: NonNullable<typeof auth>) =>
       httpRequest(url, {
         method: req.method ?? 'GET',
@@ -53,7 +86,8 @@ export async function gitlabRequest<T = unknown>(req: ApiRequest): Promise<ApiRe
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
         },
         body,
-        ignoreTls: cfg.ignoreTls
+        ignoreTls: cfg.ignoreTls,
+        signal: ac.signal
       })
 
     let res = await send(auth)
@@ -74,6 +108,11 @@ export async function gitlabRequest<T = unknown>(req: ApiRequest): Promise<ApiRe
     const total = Number(res.headers['x-total'])
     return { ok: true, data: data as T, total: Number.isFinite(total) ? total : null }
   } catch (e) {
-    return { ok: false, status: 0, error: networkError(e as NodeJS.ErrnoException) }
+    const err = e as NodeJS.ErrnoException
+    if (isAbort(err, ac.signal)) return { ok: false, status: 0, error: '已取消' }
+    return { ok: false, status: 0, error: networkError(err) }
+  } finally {
+    inflight.delete(ac)
+    if (id !== undefined) byId.delete(id)
   }
 }

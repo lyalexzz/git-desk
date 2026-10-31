@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Alert, Badge, Layout, Menu, Space, Spin, Typography } from 'antd'
 import {
   BranchesOutlined,
@@ -13,18 +13,19 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, useMe } from './api'
-import DashboardPage from './pages/DashboardPage'
-import TodosPage from './pages/TodosPage'
-import ProjectsPage from './pages/ProjectsPage'
-import ProjectDetailPage from './pages/ProjectDetailPage'
-import MergeRequestsPage from './pages/MergeRequestsPage'
-import IssuesPage from './pages/IssuesPage'
-import PipelinesPage from './pages/PipelinesPage'
-import UsersPage from './pages/UsersPage'
-import SettingsPage from './pages/SettingsPage'
 import LoginPage from './pages/LoginPage'
 import { authMethodText } from './labels'
 import type { AppConfig } from '../../shared/types'
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const TodosPage = lazy(() => import('./pages/TodosPage'))
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
+const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'))
+const MergeRequestsPage = lazy(() => import('./pages/MergeRequestsPage'))
+const IssuesPage = lazy(() => import('./pages/IssuesPage'))
+const PipelinesPage = lazy(() => import('./pages/PipelinesPage'))
+const UsersPage = lazy(() => import('./pages/UsersPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 const { Sider, Header, Content } = Layout
 
@@ -100,18 +101,20 @@ function MainLayout({ config }: { config: AppConfig }) {
           {me.error && !authFailed && (
             <Alert type="error" showIcon style={{ marginBottom: 16 }} message={`无法连接 GitLab：${(me.error as Error).message}`} />
           )}
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/todos" element={<TodosPage />} />
-            <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/projects/:id" element={<ProjectDetailPage />} />
-            <Route path="/mrs" element={<MergeRequestsPage />} />
-            <Route path="/issues" element={<IssuesPage />} />
-            <Route path="/pipelines" element={<PipelinesPage />} />
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
+          <Suspense fallback={<Spin style={{ marginTop: 80, width: '100%' }} />}>
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/todos" element={<TodosPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/projects/:id" element={<ProjectDetailPage />} />
+              <Route path="/mrs" element={<MergeRequestsPage />} />
+              <Route path="/issues" element={<IssuesPage />} />
+              <Route path="/pipelines" element={<PipelinesPage />} />
+              <Route path="/users" element={<UsersPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
     </Layout>

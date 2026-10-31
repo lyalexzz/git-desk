@@ -91,11 +91,11 @@ function RefSelect({ projectId, value, onChange }: { projectId: number; value: s
   }, [input])
   const branches = useQuery({
     queryKey: ['branches', projectId, search],
-    queryFn: () => get<Branch[]>(`/projects/${projectId}/repository/branches`, { search, per_page: 50 })
+    queryFn: ({ signal }) => get<Branch[]>(`/projects/${projectId}/repository/branches`, { search, per_page: 50 }, signal)
   })
   const tags = useQuery({
     queryKey: ['tags', projectId, search],
-    queryFn: () => get<RepoTag[]>(`/projects/${projectId}/repository/tags`, { search, per_page: 30 })
+    queryFn: ({ signal }) => get<RepoTag[]>(`/projects/${projectId}/repository/tags`, { search, per_page: 30 }, signal)
   })
   const options = [
     { label: '分支', options: (branches.data ?? []).map((b) => ({ value: b.name, label: b.name })) },
@@ -137,7 +137,8 @@ function FileContent({
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
   const file = useQuery({
     queryKey: ['file', projectId, refName, path],
-    queryFn: () => get<RepoFile>(`/projects/${projectId}/repository/files/${encodeURIComponent(path)}`, { ref: refName })
+    queryFn: ({ signal }) =>
+      get<RepoFile>(`/projects/${projectId}/repository/files/${encodeURIComponent(path)}`, { ref: refName }, signal)
   })
   const name = path.split('/').pop() ?? path
   const ext = extOf(name)
@@ -212,11 +213,17 @@ function FileContent({
 function TreeView({ project, refName, path, update }: { project: Project; refName: string; path: string; update: Update }) {
   const tree = useQuery({
     queryKey: ['tree', project.id, refName, path],
-    queryFn: () => getAll<TreeItem>(`/projects/${project.id}/repository/tree`, { ref: refName, path: path || undefined }, 20)
+    queryFn: ({ signal }) =>
+      getAll<TreeItem>(`/projects/${project.id}/repository/tree`, { ref: refName, path: path || undefined }, 20, signal)
   })
   const last = useQuery({
     queryKey: ['last-commit', project.id, refName, path],
-    queryFn: () => get<Commit[]>(`/projects/${project.id}/repository/commits`, { ref_name: refName, path: path || undefined, per_page: 1 })
+    queryFn: ({ signal }) =>
+      get<Commit[]>(
+        `/projects/${project.id}/repository/commits`,
+        { ref_name: refName, path: path || undefined, per_page: 1 },
+        signal
+      )
   })
 
   const rows = useMemo(() => {
@@ -336,12 +343,12 @@ function CommitDrawer({
 }) {
   const commit = useQuery({
     queryKey: ['commit', projectId, sha],
-    queryFn: () => get<Commit>(`/projects/${projectId}/repository/commits/${sha}`),
+    queryFn: ({ signal }) => get<Commit>(`/projects/${projectId}/repository/commits/${sha}`, undefined, signal),
     enabled: !!sha
   })
   const diff = useQuery({
     queryKey: ['commit-diff', projectId, sha],
-    queryFn: () => getAll<Diff>(`/projects/${projectId}/repository/commits/${sha}/diff`),
+    queryFn: ({ signal }) => getAll<Diff>(`/projects/${projectId}/repository/commits/${sha}/diff`, {}, undefined, signal),
     enabled: !!sha
   })
   const c = commit.data
@@ -405,13 +412,17 @@ function CommitsTab({ projectId, refName, path, update }: { projectId: number; r
 
   const commits = useQuery({
     queryKey: ['commits', projectId, refName, path, page, pageSize],
-    queryFn: () =>
-      getPage<Commit>(`/projects/${projectId}/repository/commits`, {
-        ref_name: refName,
-        path: path || undefined,
-        page,
-        per_page: pageSize
-      })
+    queryFn: ({ signal }) =>
+      getPage<Commit>(
+        `/projects/${projectId}/repository/commits`,
+        {
+          ref_name: refName,
+          path: path || undefined,
+          page,
+          per_page: pageSize
+        },
+        signal
+      )
   })
   const data = commits.data?.data ?? []
 
@@ -496,7 +507,7 @@ function BranchesTab({ project, refName, update }: { project: Project; refName: 
   const key = ['branch-list', project.id]
   const branches = useQuery({
     queryKey: [...key, search],
-    queryFn: () => getAll<Branch>(`/projects/${project.id}/repository/branches`, { search }, 20)
+    queryFn: ({ signal }) => getAll<Branch>(`/projects/${project.id}/repository/branches`, { search }, 20, signal)
   })
 
   const data = useMemo(() => {
@@ -762,7 +773,7 @@ function TagsTab({ projectId, update }: { projectId: number; update: Update }) {
   const [page, setPage] = useState(1)
   const tags = useQuery({
     queryKey: ['tag-list', projectId, search, page],
-    queryFn: () => getPage<RepoTag>(`/projects/${projectId}/repository/tags`, { search, page, per_page: 20 })
+    queryFn: ({ signal }) => getPage<RepoTag>(`/projects/${projectId}/repository/tags`, { search, page, per_page: 20 }, signal)
   })
   const data = tags.data?.data ?? []
   return (
@@ -830,7 +841,10 @@ export default function ProjectDetailPage() {
   const { id } = useParams()
   const projectId = Number(id)
   const [params, setParams] = useSearchParams()
-  const project = useQuery({ queryKey: ['project', projectId], queryFn: () => get<Project>(`/projects/${projectId}`) })
+  const project = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: ({ signal }) => get<Project>(`/projects/${projectId}`, undefined, signal)
+  })
 
   const p = project.data
   const tab = params.get('tab') ?? 'code'

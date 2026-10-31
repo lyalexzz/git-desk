@@ -50,7 +50,7 @@ function LoadError({ error }: { error: unknown }) {
 function useBranches(projectId: number) {
   return useQuery({
     queryKey: ['settings-branches', projectId],
-    queryFn: () => getAll<Branch>(`/projects/${projectId}/repository/branches`, {}, 20),
+    queryFn: ({ signal }) => getAll<Branch>(`/projects/${projectId}/repository/branches`, {}, 20, signal),
     staleTime: 60_000
   })
 }
@@ -94,7 +94,7 @@ function ProtectedBranches({ project }: { project: ProjectSettingsInfo }) {
   const base = `/projects/${project.id}/protected_branches`
   const key = ['protected-branches', project.id]
   const refresh = [key, ['branch-list', project.id], ['branches', project.id], ['settings-branches', project.id]]
-  const list = useQuery({ queryKey: key, queryFn: () => getAll<ProtectedBranch>(base) })
+  const list = useQuery({ queryKey: key, queryFn: ({ signal }) => getAll<ProtectedBranch>(base, {}, undefined, signal) })
   const branches = useBranches(project.id)
   const branchNames = useMemo(() => (branches.data ?? []).map((b) => b.name), [branches.data])
   const nameInput = Form.useWatch('name', form) ?? ''
@@ -312,10 +312,10 @@ function ProtectedTags({ projectId }: { projectId: number }) {
   const [form] = Form.useForm<TagRuleForm>()
   const base = `/projects/${projectId}/protected_tags`
   const key = ['protected-tags', projectId]
-  const list = useQuery({ queryKey: key, queryFn: () => getAll<ProtectedTag>(base) })
+  const list = useQuery({ queryKey: key, queryFn: ({ signal }) => getAll<ProtectedTag>(base, {}, undefined, signal) })
   const tags = useQuery({
     queryKey: ['settings-tags', projectId],
-    queryFn: () => getAll<RepoTag>(`/projects/${projectId}/repository/tags`),
+    queryFn: ({ signal }) => getAll<RepoTag>(`/projects/${projectId}/repository/tags`, {}, undefined, signal),
     staleTime: 60_000
   })
   const nameInput = Form.useWatch('name', form) ?? ''
@@ -621,7 +621,7 @@ function Variables({ projectId }: { projectId: number }) {
   const [form] = Form.useForm<VariableForm>()
   const base = `/projects/${projectId}/variables`
   const key = ['ci-variables', projectId]
-  const list = useQuery({ queryKey: key, queryFn: () => getAll<CiVariable>(base) })
+  const list = useQuery({ queryKey: key, queryFn: ({ signal }) => getAll<CiVariable>(base, {}, undefined, signal) })
   const data = list.data ?? []
   const allShown = data.length > 0 && data.every((v) => revealed.has(varId(v)))
 

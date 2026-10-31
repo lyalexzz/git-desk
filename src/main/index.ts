@@ -1,12 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { getConfig, saveConfig } from './config'
-import { gitlabRequest } from './gitlab'
+import { cancelAllGitlab, cancelGitlab, gitlabRequest } from './gitlab'
 import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
 import { openPasswordPage } from './password'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
-import { cancelChat, listModels, streamChat, testAi } from './ai'
-import { registerGitIpc } from './git'
+import { cancelAllChats, cancelChat, listModels, streamChat, testAi } from './ai'
+import { killGitChildren, registerGitIpc } from './git'
 import type { ApiRequest, ConfigPatch, LoginResult } from '../shared/types'
 import type { AiChatRequest, AiConnection } from '../shared/ai'
 
@@ -45,6 +45,10 @@ function createWindow(): void {
   })
   win.on('closed', () => {
     win = null
+    stopNotifier()
+    cancelAllGitlab()
+    cancelAllChats()
+    killGitChildren()
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -93,7 +97,19 @@ if (!app.requestSingleInstanceLock()) {
       resetNotifier()
       return getConfig()
     })
-    ipcMain.handle('api:request', (_e, req: ApiRequest) => gitlabRequest(req))
+    ipcMain.handle('api:request', (e, req: ApiRequest) => {
+      const id = req.requestId
+      if (typeof id === 'number') {
+        const wc = e.sender
+        const onGone = (): void => cancelGitlab(id)
+        wc.once('destroyed', onGone)
+        return gitlabRequest(req).finally(() => {
+          if (!wc.isDestroyed()) wc.removeListener('destroyed', onGone)
+        })
+      }
+      return gitlabRequest(req)
+    })
+    ipcMain.on('api:cancel', (_e, id: number) => cancelGitlab(id))
     ipcMain.handle('shell:open', (_e, url: string) => openExternal(url))
     ipcMain.handle('ai:models', (_e, conn: AiConnection) => listModels(conn))
     ipcMain.handle('ai:test', (_e, conn: AiConnection) => testAi(conn))
@@ -107,8 +123,18 @@ if (!app.requestSingleInstanceLock()) {
     startNotifier(() => win)
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+        startNotifier(() => win)
+      }
     })
+  })
+
+  app.on('before-quit', () => {
+    stopNotifier()
+    cancelAllGitlab()
+    cancelAllChats()
+    killGitChildren()
   })
 
   app.on('window-all-closed', () => {

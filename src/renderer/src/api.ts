@@ -14,24 +14,45 @@ export class ApiError extends Error {
 
 type Query = Record<string, QueryValue>
 
-export async function request<T>(req: ApiRequest): Promise<{ data: T; total: number | null }> {
-  const r = await window.desktop.request<T>(req)
-  if (!r.ok) throw new ApiError(r.error, r.status)
-  return { data: r.data, total: r.total }
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const err = new Error('请求已取消')
+  err.name = 'AbortError'
+  throw err
 }
 
-export async function get<T>(path: string, query?: Query): Promise<T> {
-  return (await request<T>({ path, query })).data
+let nextRequestId = 1
+
+export async function request<T>(req: ApiRequest, signal?: AbortSignal): Promise<{ data: T; total: number | null }> {
+  throwIfAborted(signal)
+  const requestId = nextRequestId++
+  const cancel = (): void => window.desktop.cancelRequest(requestId)
+  signal?.addEventListener('abort', cancel)
+  try {
+    const r = await window.desktop.request<T>({ ...req, requestId })
+    throwIfAborted(signal)
+    if (!r.ok) throw new ApiError(r.error, r.status)
+    return { data: r.data, total: r.total }
+  } finally {
+    signal?.removeEventListener('abort', cancel)
+  }
 }
 
-export async function getPage<T>(path: string, query?: Query): Promise<{ data: T[]; total: number | null }> {
-  return request<T[]>({ path, query })
+export async function get<T>(path: string, query?: Query, signal?: AbortSignal): Promise<T> {
+  return (await request<T>({ path, query }, signal)).data
 }
 
-export async function getAll<T>(path: string, query: Query = {}, maxPages = 5): Promise<T[]> {
+export async function getPage<T>(path: string, query?: Query, signal?: AbortSignal): Promise<{ data: T[]; total: number | null }> {
+  return request<T[]>({ path, query }, signal)
+}
+
+/** 分页拉全，最多 50 页（5000 条）；signal 中止时停止后续页并取消当前请求 */
+export async function getAll<T>(path: string, query: Query = {}, maxPages = 5, signal?: AbortSignal): Promise<T[]> {
+  const pages = Number.isFinite(maxPages) ? Math.min(50, Math.max(1, Math.floor(maxPages))) : 5
   const result: T[] = []
-  for (let page = 1; page <= maxPages; page++) {
-    const data = await get<T[]>(path, { ...query, per_page: 100, page })
+  for (let page = 1; page <= pages; page++) {
+    throwIfAborted(signal)
+    const data = await get<T[]>(path, { ...query, per_page: 100, page }, signal)
     result.push(...data)
     if (data.length < 100) break
   }
@@ -51,7 +72,11 @@ export async function del(path: string): Promise<void> {
 }
 
 export function useMe() {
-  return useQuery({ queryKey: ['me'], queryFn: () => get<User>('/user'), staleTime: 5 * 60_000 })
+  return useQuery({
+    queryKey: ['me'],
+    queryFn: ({ signal }) => get<User>('/user', undefined, signal),
+    staleTime: 5 * 60_000
+  })
 }
 
 /** 执行写操作：成功/失败提示 + 刷新相关查询 */

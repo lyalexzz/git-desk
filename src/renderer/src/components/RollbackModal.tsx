@@ -31,7 +31,7 @@ function BranchPicker({ projectId, value, onChange }: { projectId: number; value
   }, [input])
   const branches = useQuery({
     queryKey: ['branches', projectId, search],
-    queryFn: () => get<Branch[]>(`/projects/${projectId}/repository/branches`, { search, per_page: 50 })
+    queryFn: ({ signal }) => get<Branch[]>(`/projects/${projectId}/repository/branches`, { search, per_page: 50 }, signal)
   })
   const options = (branches.data ?? []).map((b) => ({ value: b.name, label: b.name }))
   if (value && !options.some((o) => o.value === value)) options.unshift({ value, label: value })
@@ -90,7 +90,7 @@ export default function RollbackModal({ projectId, branch: initialBranch, target
   const branchPath = branch ? `/projects/${projectId}/repository/branches/${encodeURIComponent(branch)}` : ''
   const branchQ = useQuery({
     queryKey: ['rollback-branch', projectId, branch],
-    queryFn: () => get<Branch>(branchPath),
+    queryFn: ({ signal }) => get<Branch>(branchPath, undefined, signal),
     enabled: !!branch,
     retry: false
   })
@@ -105,12 +105,13 @@ export default function RollbackModal({ projectId, branch: initialBranch, target
   const head = b?.commit
   const commitsQ = useQuery({
     queryKey: ['commits', projectId, 'rollback-picker', branch],
-    queryFn: () => get<Commit[]>(`/projects/${projectId}/repository/commits`, { ref_name: branch, per_page: 100 }),
+    queryFn: ({ signal }) =>
+      get<Commit[]>(`/projects/${projectId}/repository/commits`, { ref_name: branch, per_page: 100 }, signal),
     enabled: !!branch
   })
   const targetQ = useQuery({
     queryKey: ['commit', projectId, target],
-    queryFn: () => get<Commit>(`/projects/${projectId}/repository/commits/${target}`),
+    queryFn: ({ signal }) => get<Commit>(`/projects/${projectId}/repository/commits/${target}`, undefined, signal),
     enabled: !!target,
     retry: false
   })
@@ -118,18 +119,24 @@ export default function RollbackModal({ projectId, branch: initialBranch, target
   const ready = !!head && !!t && head.id !== t.id
   const compareQ = useQuery({
     queryKey: ['rollback-compare', projectId, t?.id, head?.id],
-    queryFn: () => get<Compare>(`/projects/${projectId}/repository/compare`, { from: t!.id, to: head!.id, straight: true }),
+    queryFn: ({ signal }) =>
+      get<Compare>(`/projects/${projectId}/repository/compare`, { from: t!.id, to: head!.id, straight: true }, signal),
     enabled: ready
   })
   const baseQ = useQuery({
     queryKey: ['rollback-base', projectId, t?.id, head?.id],
-    queryFn: () => get<{ id: string }>(`/projects/${projectId}/repository/merge_base?refs[]=${t!.id}&refs[]=${head!.id}`),
+    queryFn: ({ signal }) =>
+      get<{ id: string }>(`/projects/${projectId}/repository/merge_base?refs[]=${t!.id}&refs[]=${head!.id}`, undefined, signal),
     enabled: ready
   })
   const mrsQ = useQuery({
     queryKey: ['rollback-mrs', projectId, branch],
-    queryFn: () =>
-      get<MergeRequest[]>(`/projects/${projectId}/merge_requests`, { state: 'opened', source_branch: branch, per_page: 20 }),
+    queryFn: ({ signal }) =>
+      get<MergeRequest[]>(
+        `/projects/${projectId}/merge_requests`,
+        { state: 'opened', source_branch: branch, per_page: 20 },
+        signal
+      ),
     enabled: !!branch && mode === 'force'
   })
 

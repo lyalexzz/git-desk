@@ -35,7 +35,7 @@ export default function IssuesPage() {
   const path = projectId ? `/projects/${projectId}/issues` : '/issues'
   const issues = useQuery({
     queryKey: ['issues', path, scope, state, search, page, pageSize],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       getPage<Issue>(path, {
         scope,
         state: state === 'all' ? undefined : state,
@@ -43,7 +43,7 @@ export default function IssuesPage() {
         order_by: 'updated_at',
         page,
         per_page: pageSize
-      })
+      }, signal)
   })
 
   const create = async (v: NewIssue) => {

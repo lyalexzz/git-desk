@@ -1,6 +1,4 @@
-import { useMemo } from 'react'
-import hljs from 'highlight.js/lib/common'
-import 'highlight.js/styles/github.css'
+import { useEffect, useMemo, useState } from 'react'
 
 const extLang: Record<string, string> = {
   ts: 'typescript',
@@ -56,10 +54,26 @@ const extLang: Record<string, string> = {
   gradle: 'kotlin'
 }
 
-function languageFor(fileName: string): string | undefined {
+interface Highlighter {
+  getLanguage(name: string): unknown
+  highlight(code: string, options: { language: string; ignoreIllegals: boolean }): { value: string }
+}
+
+let highlighter: Promise<Highlighter> | null = null
+
+function loadHighlighter(): Promise<Highlighter> {
+  highlighter ??= Promise.all([
+    import('highlight.js/lib/common'),
+    // @ts-expect-error highlight.js 的 css 没有类型声明，打包时由 vite 处理
+    import('highlight.js/styles/github.css')
+  ]).then(([mod]) => mod.default)
+  return highlighter
+}
+
+function languageFor(hljs: Highlighter, fileName: string): string | undefined {
   const lower = fileName.toLowerCase()
-  if (lower === 'makefile') return 'makefile'
-  if (lower === 'dockerfile' || lower.endsWith('.dockerfile')) return 'bash'
+  if (lower === 'makefile') return hljs.getLanguage('makefile') ? 'makefile' : undefined
+  if (lower === 'dockerfile' || lower.endsWith('.dockerfile')) return hljs.getLanguage('bash') ? 'bash' : undefined
   const lang = extLang[lower.split('.').pop() ?? '']
   return lang && hljs.getLanguage(lang) ? lang : undefined
 }
@@ -69,15 +83,31 @@ function escapeHtml(s: string): string {
 }
 
 export default function CodeView({ code, fileName }: { code: string; fileName: string }) {
-  const html = useMemo(() => {
-    const lang = languageFor(fileName)
-    if (!lang || code.length > 500_000) return escapeHtml(code)
-    try {
-      return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
-    } catch {
-      return escapeHtml(code)
+  const plain = useMemo(() => escapeHtml(code), [code])
+  const [html, setHtml] = useState(plain)
+
+  useEffect(() => {
+    setHtml(plain)
+    if (code.length > 500_000) return
+    let cancelled = false
+    void loadHighlighter()
+      .then((hljs) => {
+        if (cancelled) return
+        const lang = languageFor(hljs, fileName)
+        if (!lang) return
+        try {
+          setHtml(hljs.highlight(code, { language: lang, ignoreIllegals: true }).value)
+        } catch {
+          setHtml(plain)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHtml(plain)
+      })
+    return () => {
+      cancelled = true
     }
-  }, [code, fileName])
+  }, [code, fileName, plain])
 
   const lineCount = code.endsWith('\n') ? code.split('\n').length - 1 : code.split('\n').length
   const gutter = useMemo(() => Array.from({ length: lineCount }, (_, i) => i + 1).join('\n'), [lineCount])

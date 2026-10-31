@@ -1,6 +1,6 @@
 import { BrowserWindow, session } from 'electron'
 import { getConfig } from './config'
-import { LOGIN_PARTITION } from './auth'
+import { LOGIN_PARTITION, applyCertificatePolicy } from './auth'
 import type { PasswordPageResult } from '../shared/types'
 
 /** 新版在前；17.x 以前是 /-/profile/password/edit */
@@ -16,7 +16,7 @@ export function openPasswordPage(parent: BrowserWindow | null): Promise<Password
   const prefix = base.pathname.replace(/\/$/, '')
 
   const ses = session.fromPartition(LOGIN_PARTITION)
-  ses.setCertificateVerifyProc(cfg.ignoreTls ? (_req, cb) => cb(0) : null)
+  applyCertificatePolicy(ses)
 
   const title = `修改${cfg.isJihu ? '极狐 GitLab' : ' GitLab'} 密码 —— 未登录时请先登录；保存成功后窗口会自动关闭`
   const win = new BrowserWindow({

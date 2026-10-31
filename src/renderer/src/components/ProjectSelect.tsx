@@ -23,19 +23,19 @@ export default function ProjectSelect({ value, onChange, placeholder = '搜索�
 
   const list = useQuery({
     queryKey: ['project-options', search],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       get<Project[]>('/projects', {
         membership: true,
         simple: true,
         search,
         per_page: 30,
         order_by: 'last_activity_at'
-      })
+      }, signal)
   })
 
   const current = useQuery({
     queryKey: ['project', value],
-    queryFn: () => get<Project>(`/projects/${value}`),
+    queryFn: ({ signal }) => get<Project>(`/projects/${value}`, undefined, signal),
     enabled: value != null && !list.data?.some((p) => p.id === value)
   })
 

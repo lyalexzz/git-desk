@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Checkbox, Descriptions, Drawer, Empty, Modal, Space, Spin, Tabs, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, get, openExternal, post, put, useAction } from '../api'
+import { ApiError, get, getAll, openExternal, post, put, useAction } from '../api'
 import { MergeStatus, MrState, PipelineStatus, TimeAgo } from '../labels'
 import Notes from './Notes'
 import DiffList from './DiffList'
@@ -14,13 +14,13 @@ interface Approvals {
   approvals_left?: number
 }
 
-async function loadDiffs(base: string): Promise<Diff[]> {
+async function loadDiffs(base: string, signal?: AbortSignal): Promise<Diff[]> {
   try {
-    return await get<Diff[]>(`${base}/diffs`, { per_page: 100 })
+    return await getAll<Diff>(`${base}/diffs`, {}, 10, signal)
   } catch (e) {
     // GitLab < 15.7 没有 /diffs 接口
     if (e instanceof ApiError && e.status === 404) {
-      return (await get<{ changes: Diff[] }>(`${base}/changes`)).changes
+      return (await get<{ changes: Diff[] }>(`${base}/changes`, undefined, signal)).changes
     }
     throw e
   }
@@ -45,16 +45,16 @@ export default function MrDrawer({
 
   const mrKey = ['mr', projectId, iid]
   const approvalsKey = ['mr-approvals', projectId, iid]
-  const mr = useQuery({ queryKey: mrKey, queryFn: () => get<MergeRequest>(base), enabled: open })
+  const mr = useQuery({ queryKey: mrKey, queryFn: ({ signal }) => get<MergeRequest>(base, undefined, signal), enabled: open })
   const approvals = useQuery({
     queryKey: approvalsKey,
-    queryFn: () => get<Approvals>(`${base}/approvals`),
+    queryFn: ({ signal }) => get<Approvals>(`${base}/approvals`, undefined, signal),
     enabled: open,
     retry: false
   })
   const diffs = useQuery({
     queryKey: ['mr-diffs', projectId, iid],
-    queryFn: () => loadDiffs(base),
+    queryFn: ({ signal }) => loadDiffs(base, signal),
     enabled: open && (tab === 'changes' || tab === 'ai')
   })
 

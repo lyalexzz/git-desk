@@ -14,7 +14,13 @@ dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } }
+  defaultOptions: {
+    queries: {
+      retry: (count, error) => count < 1 && (error as Error).name !== 'AbortError',
+      refetchOnWindowFocus: false,
+      staleTime: 30_000
+    }
+  }
 })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

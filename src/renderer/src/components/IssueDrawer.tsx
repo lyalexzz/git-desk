@@ -17,7 +17,7 @@ export default function IssueDrawer({
   const open = projectId != null && iid != null
   const base = `/projects/${projectId}/issues/${iid}`
   const key = ['issue', projectId, iid]
-  const issue = useQuery({ queryKey: key, queryFn: () => get<Issue>(base), enabled: open })
+  const issue = useQuery({ queryKey: key, queryFn: ({ signal }) => get<Issue>(base, undefined, signal), enabled: open })
   const me = useMe()
   const run = useAction()
   const refresh = [key, ['issues'], ['notes', base], ['todos'], ['count']]

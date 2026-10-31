@@ -111,6 +111,25 @@ export function authHeaders(auth: AuthState): Record<string, string> {
   return auth.type === 'pat' ? { 'PRIVATE-TOKEN': auth.token } : { Authorization: `Bearer ${auth.accessToken}` }
 }
 
+/** 忽略证书只作用于当前 GitLab 主机；其它站点仍走系统校验。未开启时恢复默认 */
+export function applyCertificatePolicy(ses: Electron.Session): void {
+  const cfg = getConfig()
+  if (!cfg.ignoreTls || !cfg.baseUrl) {
+    ses.setCertificateVerifyProc(null)
+    return
+  }
+  let host = ''
+  try {
+    host = new URL(cfg.baseUrl).hostname.toLowerCase()
+  } catch {
+    ses.setCertificateVerifyProc(null)
+    return
+  }
+  ses.setCertificateVerifyProc((request, callback) => {
+    callback(request.hostname.toLowerCase() === host ? 0 : -3)
+  })
+}
+
 /** 用新的登录凭证调用 /user 校验，成功才保存 */
 async function finishLogin(auth: AuthState): Promise<LoginResult> {
   const cfg = getConfig()
@@ -193,7 +212,7 @@ export function loginWithWeb(parent: BrowserWindow | null): Promise<LoginResult>
   }).toString()
 
   const ses = session.fromPartition(LOGIN_PARTITION)
-  ses.setCertificateVerifyProc(cfg.ignoreTls ? (_req, cb) => cb(0) : null)
+  applyCertificatePolicy(ses)
 
   const win = new BrowserWindow({
     parent: parent ?? undefined,

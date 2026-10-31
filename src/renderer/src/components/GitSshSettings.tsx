@@ -89,7 +89,10 @@ export default function GitSshSettings() {
   const me = useMe()
   const env = useGitEnv()
   const status = useSshStatus()
-  const keys = useQuery({ queryKey: ['user-keys'], queryFn: () => get<GitlabKey[]>('/user/keys', { per_page: 100 }) })
+  const keys = useQuery({
+    queryKey: ['user-keys'],
+    queryFn: ({ signal }) => get<GitlabKey[]>('/user/keys', { per_page: 100 }, signal)
+  })
   const identity = useQuery({
     queryKey: ['git-identity'],
     enabled: Boolean(env.data?.git),

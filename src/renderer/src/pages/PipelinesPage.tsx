@@ -19,7 +19,8 @@ function cleanLog(text: string): string {
 function JobLog({ projectId, job, onClose }: { projectId: number; job?: Job; onClose: () => void }) {
   const log = useQuery({
     queryKey: ['job-log', projectId, job?.id],
-    queryFn: async () => cleanLog((await request<string>({ path: `/projects/${projectId}/jobs/${job!.id}/trace`, raw: true })).data),
+    queryFn: async ({ signal }) =>
+      cleanLog((await request<string>({ path: `/projects/${projectId}/jobs/${job!.id}/trace`, raw: true }, signal)).data),
     enabled: !!job,
     refetchInterval: job && ACTIVE.includes(job.status) ? 3000 : false
   })
@@ -36,7 +37,8 @@ function PipelineDrawer({ projectId, pipeline, onClose }: { projectId: number; p
   const key = ['jobs', projectId, pipeline?.id]
   const jobs = useQuery({
     queryKey: key,
-    queryFn: () => getAll<Job>(`/projects/${projectId}/pipelines/${pipeline!.id}/jobs`, { include_retried: false }),
+    queryFn: ({ signal }) =>
+      getAll<Job>(`/projects/${projectId}/pipelines/${pipeline!.id}/jobs`, { include_retried: false }, undefined, signal),
     enabled: !!pipeline,
     refetchInterval: pipeline && ACTIVE.includes(pipeline.status) ? 5000 : false
   })
@@ -102,13 +104,15 @@ export default function PipelinesPage() {
 
   const pipelines = useQuery({
     queryKey: ['pipelines', projectId, status, ref, page, pageSize],
-    queryFn: () => getPage<Pipeline>(`/projects/${projectId}/pipelines`, { status, ref, page, per_page: pageSize }),
+    queryFn: ({ signal }) =>
+      getPage<Pipeline>(`/projects/${projectId}/pipelines`, { status, ref, page, per_page: pageSize }, signal),
     enabled: projectId != null,
     refetchInterval: (q) => (q.state.data?.data.some((p) => ACTIVE.includes(p.status)) ? 10_000 : false)
   })
   const branches = useQuery({
     queryKey: ['branches', projectId, branchSearch],
-    queryFn: () => get<Branch[]>(`/projects/${projectId}/repository/branches`, { search: branchSearch, per_page: 50 }),
+    queryFn: ({ signal }) =>
+      get<Branch[]>(`/projects/${projectId}/repository/branches`, { search: branchSearch, per_page: 50 }, signal),
     enabled: creating && projectId != null
   })
 

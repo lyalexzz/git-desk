@@ -17,6 +17,7 @@ const api: DesktopApi = {
   logout: () => ipcRenderer.invoke('auth:logout'),
   oauthRedirectUri: () => ipcRenderer.invoke('auth:redirect-uri'),
   request: (req) => ipcRenderer.invoke('api:request', req),
+  cancelRequest: (id) => ipcRenderer.send('api:cancel', id),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   onNavigate: (cb) => subscribe('navigate', cb),
   onTodoCount: (cb) => subscribe('todos:count', cb),

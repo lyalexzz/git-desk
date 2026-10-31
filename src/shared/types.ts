@@ -46,6 +46,8 @@ export interface ApiRequest {
   query?: Record<string, QueryValue>
   body?: unknown
   raw?: boolean
+  /** 渲染进程用来取消这一次请求 */
+  requestId?: number
 }
 
 export type ApiResult<T = unknown> =
@@ -63,6 +65,7 @@ export interface DesktopApi {
   logout(): Promise<AppConfig>
   oauthRedirectUri(): Promise<string>
   request<T = unknown>(req: ApiRequest): Promise<ApiResult<T>>
+  cancelRequest(id: number): void
   openExternal(url: string): Promise<void>
   onNavigate(cb: (path: string) => void): () => void
   onTodoCount(cb: (count: number) => void): () => void

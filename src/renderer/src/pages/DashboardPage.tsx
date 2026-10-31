@@ -21,8 +21,8 @@ function eventCategory(e: UserEvent): string {
 function useCount(key: string, path: string, query: Record<string, string | number | boolean | undefined>, enabled = true) {
   return useQuery({
     queryKey: ['count', key, query],
-    queryFn: async () => {
-      const r = await getPage(path, { ...query, per_page: 1 })
+    queryFn: async ({ signal }) => {
+      const r = await getPage(path, { ...query, per_page: 1 }, signal)
       return r.total
     },
     enabled
@@ -51,16 +51,18 @@ export default function DashboardPage() {
 
   const events = useQuery({
     queryKey: ['my-events', me.data?.id, since],
-    queryFn: () => getAll<UserEvent>(`/users/${me.data!.id}/events`, { after: dayjs(since).subtract(1, 'day').format('YYYY-MM-DD') }),
+    queryFn: ({ signal }) =>
+      getAll<UserEvent>(`/users/${me.data!.id}/events`, { after: dayjs(since).subtract(1, 'day').format('YYYY-MM-DD') }, undefined, signal),
     enabled: !!me.data
   })
   const projects = useQuery({
     queryKey: ['membership-projects'],
-    queryFn: () => getAll<Project>('/projects', { membership: true, simple: true }, 3)
+    queryFn: ({ signal }) => getAll<Project>('/projects', { membership: true, simple: true }, 3, signal)
   })
   const commits = useQuery({
     queryKey: ['project-commits', projectId, since],
-    queryFn: () => getAll<Commit>(`/projects/${projectId}/repository/commits`, { since: dayjs(since).toISOString(), all: true }, 10),
+    queryFn: ({ signal }) =>
+      getAll<Commit>(`/projects/${projectId}/repository/commits`, { since: dayjs(since).toISOString(), all: true }, 10, signal),
     enabled: projectId != null
   })
 

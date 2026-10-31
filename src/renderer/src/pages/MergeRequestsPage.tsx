@@ -32,16 +32,20 @@ export default function MergeRequestsPage() {
   const path = projectId ? `/projects/${projectId}/merge_requests` : '/merge_requests'
   const mrs = useQuery({
     queryKey: ['mrs', path, scope, state, search, page, pageSize, me.data?.username],
-    queryFn: () =>
-      getPage<MergeRequest>(path, {
-        scope: scope === 'review' ? 'all' : scope,
-        reviewer_username: scope === 'review' ? me.data?.username : undefined,
-        state: state === 'all' ? undefined : state,
-        search,
-        order_by: 'updated_at',
-        page,
-        per_page: pageSize
-      }),
+    queryFn: ({ signal }) =>
+      getPage<MergeRequest>(
+        path,
+        {
+          scope: scope === 'review' ? 'all' : scope,
+          reviewer_username: scope === 'review' ? me.data?.username : undefined,
+          state: state === 'all' ? undefined : state,
+          search,
+          order_by: 'updated_at',
+          page,
+          per_page: pageSize
+        },
+        signal
+      ),
     enabled: scope !== 'review' || !!me.data
   })
 

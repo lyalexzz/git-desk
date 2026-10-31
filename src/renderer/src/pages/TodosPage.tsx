@@ -16,7 +16,7 @@ export default function TodosPage() {
   const key = ['todos', page, pageSize]
   const todos = useQuery({
     queryKey: key,
-    queryFn: () => getPage<Todo>('/todos', { state: 'pending', page, per_page: pageSize })
+    queryFn: ({ signal }) => getPage<Todo>('/todos', { state: 'pending', page, per_page: pageSize }, signal)
   })
 
   const openTodo = (t: Todo) => {

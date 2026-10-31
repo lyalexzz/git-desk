@@ -26,11 +26,11 @@ function GroupSelect({ value, onChange }: { value?: number; onChange: (v?: numbe
 
   const list = useQuery({
     queryKey: ['group-options', search],
-    queryFn: () => get<Group[]>('/groups', { search, all_available: true, order_by: 'name', per_page: 50 })
+    queryFn: ({ signal }) => get<Group[]>('/groups', { search, all_available: true, order_by: 'name', per_page: 50 }, signal)
   })
   const current = useQuery({
     queryKey: ['group', value],
-    queryFn: () => get<Group>(`/groups/${value}`, { with_projects: false }),
+    queryFn: ({ signal }) => get<Group>(`/groups/${value}`, { with_projects: false }, signal),
     enabled: value != null && !list.data?.some((g) => g.id === value)
   })
 
@@ -88,7 +88,7 @@ export default function ProjectsPage() {
 
   const projects = useQuery({
     queryKey: ['projects', scope, group, search, page, pageSize],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       group
         ? getPage<ProjectRow>(`/groups/${group}/projects`, {
             include_subgroups: true,
@@ -98,7 +98,7 @@ export default function ProjectsPage() {
             order_by: 'last_activity_at',
             page,
             per_page: pageSize
-          })
+          }, signal)
         : getPage<ProjectRow>('/projects', {
             membership: scope === 'membership' || undefined,
             starred: scope === 'starred' || undefined,
@@ -107,11 +107,11 @@ export default function ProjectsPage() {
             order_by: 'last_activity_at',
             page,
             per_page: pageSize
-          })
+          }, signal)
   })
   const starred = useQuery({
     queryKey: ['starred-ids'],
-    queryFn: async () => new Set((await getAll<Project>('/projects', { starred: true, simple: true })).map((p) => p.id))
+    queryFn: async ({ signal }) => new Set((await getAll<Project>('/projects', { starred: true, simple: true }, undefined, signal)).map((p) => p.id))
   })
 
   const toggleStar = (p: Project) => {

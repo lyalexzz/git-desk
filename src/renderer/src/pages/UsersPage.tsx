@@ -50,7 +50,7 @@ function UserList() {
 
   const users = useQuery({
     queryKey: ['users', filter, search, page, pageSize],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       getPage<User>('/users', {
         active: filter === 'active' || undefined,
         blocked: filter === 'blocked' || undefined,
@@ -58,7 +58,7 @@ function UserList() {
         order_by: 'created_at',
         page,
         per_page: pageSize
-      })
+      }, signal)
   })
 
   const create = async (v: NewUser) => {
@@ -225,7 +225,7 @@ function UserPicker({ value, onChange }: { value?: number; onChange?: (v: number
   }, [input])
   const users = useQuery({
     queryKey: ['user-options', search],
-    queryFn: () => get<User[]>('/users', { search, active: true, per_page: 20 }),
+    queryFn: ({ signal }) => get<User[]>('/users', { search, active: true, per_page: 20 }, signal),
     enabled: search.length > 0
   })
   return (
@@ -251,7 +251,7 @@ function ProjectMembers() {
   const key = ['members', projectId]
   const members = useQuery({
     queryKey: key,
-    queryFn: () => get<Member[]>(`/projects/${projectId}/members`, { per_page: 100 }),
+    queryFn: ({ signal }) => get<Member[]>(`/projects/${projectId}/members`, { per_page: 100 }, signal),
     enabled: projectId != null
   })
 

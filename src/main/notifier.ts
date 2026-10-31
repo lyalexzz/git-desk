@@ -39,39 +39,55 @@ export function resetNotifier(): void {
   seeded = false
 }
 
+let ticking = false
+
 export function startNotifier(getWin: () => BrowserWindow | null): void {
   stopNotifier()
+  const cfg = getConfig()
+  if (!cfg.baseUrl || !cfg.loggedIn) return
 
   const tick = async (): Promise<void> => {
-    const cfg = getConfig()
-    if (!cfg.baseUrl || !cfg.loggedIn) return
-    const res = await gitlabRequest<Todo[]>({ path: '/todos', query: { state: 'pending', per_page: 50 } })
-    if (!res.ok) return
-
-    getWin()?.webContents.send('todos:count', res.total ?? res.data.length)
-
-    if (seeded && cfg.notify && Notification.isSupported()) {
-      for (const t of res.data) {
-        if (seen.has(t.id)) continue
-        const n = new Notification({
-          title: `${t.author.name} ${actionText[t.action_name] ?? t.action_name}`,
-          body: [t.target?.title ?? t.body, t.project?.name_with_namespace].filter(Boolean).join('\n')
-        })
-        n.on('click', () => {
-          const w = getWin()
-          if (!w) return
-          if (w.isMinimized()) w.restore()
-          w.show()
-          w.focus()
-          w.webContents.send('navigate', '/todos')
-        })
-        n.show()
-      }
+    if (ticking) return
+    const w = getWin()
+    if (!w || w.isDestroyed()) return
+    const current = getConfig()
+    if (!current.baseUrl || !current.loggedIn) {
+      stopNotifier()
+      return
     }
-    seen = new Set(res.data.map((t) => t.id))
-    seeded = true
+    ticking = true
+    try {
+      const res = await gitlabRequest<Todo[]>({ path: '/todos', query: { state: 'pending', per_page: 50 } })
+      if (!res.ok || w.isDestroyed()) return
+
+      w.webContents.send('todos:count', res.total ?? res.data.length)
+
+      if (seeded && current.notify && Notification.isSupported()) {
+        for (const t of res.data) {
+          if (seen.has(t.id)) continue
+          const n = new Notification({
+            title: `${t.author.name} ${actionText[t.action_name] ?? t.action_name}`,
+            body: [t.target?.title ?? t.body, t.project?.name_with_namespace].filter(Boolean).join('\n')
+          })
+          n.on('click', () => {
+            const target = getWin()
+            if (!target || target.isDestroyed()) return
+            if (target.isMinimized()) target.restore()
+            target.show()
+            target.focus()
+            target.webContents.send('navigate', '/todos')
+          })
+          n.show()
+        }
+      }
+      seen = new Set(res.data.map((t) => t.id))
+      seeded = true
+    } finally {
+      ticking = false
+    }
   }
 
   void tick()
-  timer = setInterval(() => void tick(), getConfig().pollMinutes * 60_000)
+  const minutes = Math.min(60, Math.max(1, getConfig().pollMinutes || 2))
+  timer = setInterval(() => void tick(), minutes * 60_000)
 }

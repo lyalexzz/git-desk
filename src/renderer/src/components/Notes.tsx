@@ -13,7 +13,7 @@ export default function Notes({ basePath }: { basePath: string }) {
   const key = ['notes', basePath]
   const notes = useQuery({
     queryKey: key,
-    queryFn: () => getAll<Note>(`${basePath}/notes`, { sort: 'asc', order_by: 'created_at' })
+    queryFn: ({ signal }) => getAll<Note>(`${basePath}/notes`, { sort: 'asc', order_by: 'created_at' }, undefined, signal)
   })
 
   const visible = (notes.data ?? []).filter((n) => showSystem || !n.system)

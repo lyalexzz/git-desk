@@ -204,6 +204,10 @@ export function cancelChat(id: string): void {
   running.get(id)?.abort()
 }
 
+export function cancelAllChats(): void {
+  for (const ac of running.values()) ac.abort()
+}
+
 interface ChunkJson {
   model?: string
   error?: unknown
@@ -222,6 +226,16 @@ export async function streamChat(wc: WebContents, req: AiChatRequest): Promise<v
   const id = req.id
   const ac = new AbortController()
   running.set(id, ac)
+  const onGone = (): void => ac.abort()
+  wc.once('destroyed', onGone)
+  let res: IncomingMessage | null = null
+  const stopBody = (): void => {
+    const current = res
+    if (!current || current.destroyed) return
+    current.on('error', () => {})
+    current.destroy()
+  }
+  ac.signal.addEventListener('abort', stopBody)
   try {
     const r = resolve()
     if (!r.baseUrl || !r.model) throw new AiError('尚未配置 AI，请先到「设置 → AI 助手」中配置')
@@ -233,7 +247,6 @@ export async function streamChat(wc: WebContents, req: AiChatRequest): Promise<v
     })
 
     const list = candidates(r.baseUrl)
-    let res: IncomingMessage | null = null
     for (let i = 0; i < list.length; i++) {
       res = await httpStream(toUrl(list[i], '/chat/completions'), {
         method: 'POST',
@@ -244,7 +257,9 @@ export async function streamChat(wc: WebContents, req: AiChatRequest): Promise<v
         signal: ac.signal
       })
       if (res.statusCode === 404 && i < list.length - 1) {
-        res.resume()
+        res.on('error', () => {})
+        res.destroy()
+        res = null
         continue
       }
       break
@@ -292,11 +307,15 @@ export async function streamChat(wc: WebContents, req: AiChatRequest): Promise<v
       }
       if (!finished) for (const data of parser.end()) handle(data)
     }
+    if (finished) stopBody()
     emit({ type: 'done', id, model, finishReason, usage })
   } catch (e) {
+    stopBody()
     if (ac.signal.aborted) emit({ type: 'done', id, model: '', finishReason: 'cancelled' })
     else emit({ type: 'error', id, error: errorText(e) })
   } finally {
+    ac.signal.removeEventListener('abort', stopBody)
+    if (!wc.isDestroyed()) wc.removeListener('destroyed', onGone)
     running.delete(id)
   }
 }

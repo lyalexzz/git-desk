@@ -60,6 +60,17 @@ function killTree(child: ChildProcess): void {
   else child.kill('SIGTERM')
 }
 
+const live = new Set<ChildProcess>()
+
+function watch(child: ChildProcess): void {
+  live.add(child)
+  const drop = (): void => {
+    live.delete(child)
+  }
+  child.once('exit', drop)
+  child.once('error', drop)
+}
+
 function run(cmd: string, args: string[], opts: { timeout?: number; env?: NodeJS.ProcessEnv; cwd?: string } = {}): Promise<RunResult> {
   return new Promise((done) => {
     let stdout = ''
@@ -68,6 +79,7 @@ function run(cmd: string, args: string[], opts: { timeout?: number; env?: NodeJS
     let child: ChildProcess
     try {
       child = spawn(cmd, args, { windowsHide: true, env: opts.env ?? childEnv(), cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    watch(child)
     } catch (e) {
       done({ code: null, stdout, stderr, error: e as NodeJS.ErrnoException })
       return
@@ -459,8 +471,13 @@ const cloneKey = (projectId: number): string => `${getConfig().baseUrl}#${projec
 function checkDir(dir: unknown): string {
   if (typeof dir !== 'string' || !dir.trim() || !isAbsolute(dir.trim())) throw new Error('请填写完整的本地文件夹路径')
   const p = resolve(dir.trim())
-  if (parsePath(p).root === p) throw new Error('不能直接使用磁盘根目录，请选择一个子文件夹')
+  const root = parsePath(p).root
+  if (root === p) throw new Error('不能直接使用磁盘根目录，请选择一个子文件夹')
   if (p.length > 240) throw new Error('路径过长')
+  const rest = p.slice(root.length)
+  if (/[<>:"|?*\u0000-\u001f]/.test(rest) || /[ .]$/.test(p)) {
+    throw new Error('路径包含 Windows 不允许的字符，或以空格、句点结尾')
+  }
   return p
 }
 
@@ -520,7 +537,35 @@ async function gitAuthEnv(url: string): Promise<{ env: Record<string, string>; a
   return { env: extra, args: configs.flatMap(([k, v]) => ['-c', `${k}=${v}`]) }
 }
 
+function redact(text: string): string {
+  return text
+    .replace(/Authorization:\s*Basic\s+\S+/gi, 'Authorization: Basic [已隐藏]')
+    .replace(/PRIVATE-TOKEN:\s*\S+/gi, 'PRIVATE-TOKEN: [已隐藏]')
+    .replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1')
+}
+
+function validCloneUrl(url: string): boolean {
+  if (!url || url.length > 2000 || /[\r\n\0]/.test(url) || url.startsWith('-')) return false
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const u = new URL(url)
+      return u.hostname.length > 0 && !u.username && !u.password
+    } catch {
+      return false
+    }
+  }
+  if (/^ssh:\/\//i.test(url)) {
+    try {
+      return new URL(url).hostname.length > 0
+    } catch {
+      return false
+    }
+  }
+  return /^[\w.+-]+@[\w.-]+:[^\s]+$/.test(url)
+}
+
 function gitExplain(out: string): string {
+  out = redact(out)
   if (/Permission denied \(publickey/i.test(out)) return 'SSH 密钥认证失败：请先到「设置 → SSH 与 Git」完成一键配置并测试连接，或改用 HTTPS。'
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(out)) {
     return '服务器主机指纹校验失败（~/.ssh/known_hosts 中的记录不一致），请向管理员确认。'
@@ -603,6 +648,11 @@ function validBranch(b: string): boolean {
 
 const running = new Map<string, { child: ChildProcess; cancelled: boolean }>()
 
+export function killGitChildren(): void {
+  for (const job of running.values()) job.cancelled = true
+  for (const child of live) killTree(child)
+}
+
 async function startClone(wc: WebContents, req: CloneRequest): Promise<void> {
   const id = String(req.id)
   const emit = (e: CloneEvent): void => {
@@ -618,6 +668,7 @@ async function startClone(wc: WebContents, req: CloneRequest): Promise<void> {
     project = await getProject(Number(req.projectId))
     url = (req.protocol === 'ssh' ? project.ssh_url_to_repo : project.http_url_to_repo) ?? ''
     if (!url) throw new Error(req.protocol === 'ssh' ? '该项目没有 SSH 地址' : '该项目没有 HTTPS 地址')
+    if (!validCloneUrl(url)) throw new Error('仓库地址不合法')
     const branch = req.branch?.trim()
     if (branch && !validBranch(branch)) throw new Error('分支名不合法')
 
@@ -639,6 +690,7 @@ async function startClone(wc: WebContents, req: CloneRequest): Promise<void> {
     const auth = await gitAuthEnv(url)
     const args = [...auth.args, 'clone', '--progress', ...(branch ? ['--branch', branch] : []), '--', url, dir]
     const child = spawn(git, args, { windowsHide: true, env: childEnv(auth.env), stdio: ['ignore', 'pipe', 'pipe'] })
+    watch(child)
     const job = { child, cancelled: false }
     running.set(id, job)
 
@@ -662,9 +714,10 @@ async function startClone(wc: WebContents, req: CloneRequest): Promise<void> {
         }
         return
       }
-      log.push(text)
+      const safe = redact(text)
+      log.push(safe)
       if (log.length > 200) log.shift()
-      emit({ type: 'log', id, line: text })
+      emit({ type: 'log', id, line: safe })
     }
     child.stdout?.on('data', onData)
     child.stderr?.on('data', onData)
