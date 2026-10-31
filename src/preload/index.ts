@@ -13,6 +13,7 @@ const api: DesktopApi = {
   loginWithToken: (token) => ipcRenderer.invoke('auth:token', token),
   loginWithPassword: (username, password) => ipcRenderer.invoke('auth:password', username, password),
   loginWithWeb: () => ipcRenderer.invoke('auth:web'),
+  openPasswordPage: () => ipcRenderer.invoke('auth:password-page'),
   logout: () => ipcRenderer.invoke('auth:logout'),
   oauthRedirectUri: () => ipcRenderer.invoke('auth:redirect-uri'),
   request: (req) => ipcRenderer.invoke('api:request', req),

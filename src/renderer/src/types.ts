@@ -8,6 +8,7 @@ export interface User {
   web_url: string
   last_activity_on?: string | null
   created_at?: string
+  identities?: { provider: string; extern_uid: string }[]
 }
 
 export interface Project {

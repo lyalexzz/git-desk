@@ -36,6 +36,8 @@ export interface ConfigPatch {
 
 export type LoginResult = { ok: true; user: { name: string; username: string } } | { ok: false; error: string }
 
+export type PasswordPageResult = { ok: true } | { ok: false; error: string; cancelled?: boolean }
+
 export type QueryValue = string | number | boolean | undefined | null
 
 export interface ApiRequest {
@@ -56,6 +58,8 @@ export interface DesktopApi {
   loginWithToken(token: string): Promise<LoginResult>
   loginWithPassword(username: string, password: string): Promise<LoginResult>
   loginWithWeb(): Promise<LoginResult>
+  /** 在应用内打开 GitLab 网页的修改密码页 */
+  openPasswordPage(): Promise<PasswordPageResult>
   logout(): Promise<AppConfig>
   oauthRedirectUri(): Promise<string>
   request<T = unknown>(req: ApiRequest): Promise<ApiResult<T>>

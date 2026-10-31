@@ -1,10 +1,30 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, DatePicker, Empty, Form, Input, Modal, Popconfirm, Result, Segmented, Select, Space, Table, Tabs, Tag } from 'antd'
+import {
+  Button,
+  Card,
+  DatePicker,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Result,
+  Segmented,
+  Select,
+  Space,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography
+} from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import type { Dayjs } from 'dayjs'
 import { del, get, getPage, post, put, useAction, useMe } from '../api'
 import { TimeAgo, UserState, accessLevels } from '../labels'
 import ProjectSelect from '../components/ProjectSelect'
+import ResetPasswordModal from '../components/ResetPasswordModal'
+import { isLdapUser } from '../password'
 import type { Member, User } from '../types'
 
 type Filter = 'all' | 'active' | 'blocked'
@@ -25,6 +45,7 @@ function UserList() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [creating, setCreating] = useState(false)
+  const [resetting, setResetting] = useState<User>()
   const [form] = Form.useForm<NewUser>()
 
   const users = useQuery({
@@ -117,52 +138,25 @@ function UserList() {
           { title: '创建时间', width: 110, dataIndex: 'created_at', render: (v) => <TimeAgo value={v} /> },
           {
             title: '操作',
-            width: 100,
-            render: (_, u) => {
-              const act = (action: string, done: string) => () =>
-                run(() => post(`/users/${u.id}/${action}`), done, userKeys)
-              switch (u.state) {
-                case 'active':
-                  return (
-                    <Popconfirm
-                      title={`封禁用户 ${u.name}？`}
-                      description="封禁后该用户无法登录和访问仓库"
-                      onConfirm={act('block', '已封禁')}
-                    >
-                      <a style={{ color: '#ff4d4f' }}>封禁</a>
-                    </Popconfirm>
-                  )
-                case 'blocked':
-                  return (
-                    <Popconfirm title={`解封用户 ${u.name}？`} onConfirm={act('unblock', '已解封')}>
-                      <a>解封</a>
-                    </Popconfirm>
-                  )
-                case 'banned':
-                  return (
-                    <Popconfirm title={`解除禁用用户 ${u.name}？`} onConfirm={act('unban', '已解除禁用')}>
-                      <a>解除禁用</a>
-                    </Popconfirm>
-                  )
-                case 'deactivated':
-                  return (
-                    <Popconfirm title={`重新激活用户 ${u.name}？`} onConfirm={act('activate', '已激活')}>
-                      <a>激活</a>
-                    </Popconfirm>
-                  )
-                case 'blocked_pending_approval':
-                  return (
-                    <Popconfirm title={`批准用户 ${u.name} 的注册？`} onConfirm={act('approve', '已批准')}>
-                      <a>批准</a>
-                    </Popconfirm>
-                  )
-                default:
-                  return '-'
-              }
-            }
+            width: 170,
+            render: (_, u) => (
+              <Space size={12}>
+                <StateAction u={u} />
+                {isLdapUser(u) ? (
+                  <Tooltip title="LDAP 账号的密码由公司统一身份系统管理，不能在 GitLab 中重置">
+                    <span>
+                      <Typography.Link disabled>重置密码</Typography.Link>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <a onClick={() => setResetting(u)}>重置密码</a>
+                )}
+              </Space>
+            )
           }
         ]}
       />
+      {resetting && <ResetPasswordModal user={resetting} onClose={() => setResetting(undefined)} />}
       <Modal title="新建用户" open={creating} onCancel={() => setCreating(false)} onOk={() => form.submit()} okText="创建">
         <Form form={form} layout="vertical" onFinish={create}>
           <Form.Item label="姓名" name="name" rules={[{ required: true, message: '请填写姓名' }]}>
@@ -181,6 +175,45 @@ function UserList() {
       </Modal>
     </>
   )
+}
+
+function StateAction({ u }: { u: User }) {
+  const run = useAction()
+  const act = (action: string, done: string) => () => run(() => post(`/users/${u.id}/${action}`), done, userKeys)
+  switch (u.state) {
+    case 'active':
+      return (
+        <Popconfirm title={`封禁用户 ${u.name}？`} description="封禁后该用户无法登录和访问仓库" onConfirm={act('block', '已封禁')}>
+          <a style={{ color: '#ff4d4f' }}>封禁</a>
+        </Popconfirm>
+      )
+    case 'blocked':
+      return (
+        <Popconfirm title={`解封用户 ${u.name}？`} onConfirm={act('unblock', '已解封')}>
+          <a>解封</a>
+        </Popconfirm>
+      )
+    case 'banned':
+      return (
+        <Popconfirm title={`解除禁用用户 ${u.name}？`} onConfirm={act('unban', '已解除禁用')}>
+          <a>解除禁用</a>
+        </Popconfirm>
+      )
+    case 'deactivated':
+      return (
+        <Popconfirm title={`重新激活用户 ${u.name}？`} onConfirm={act('activate', '已激活')}>
+          <a>激活</a>
+        </Popconfirm>
+      )
+    case 'blocked_pending_approval':
+      return (
+        <Popconfirm title={`批准用户 ${u.name} 的注册？`} onConfirm={act('approve', '已批准')}>
+          <a>批准</a>
+        </Popconfirm>
+      )
+    default:
+      return <span>-</span>
+  }
 }
 
 function UserPicker({ value, onChange }: { value?: number; onChange?: (v: number) => void }) {

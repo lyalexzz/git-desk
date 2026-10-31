@@ -5,7 +5,7 @@ import { httpRequest, networkError, parseJson } from './http'
 import type { LoginResult } from '../shared/types'
 
 export const OAUTH_REDIRECT_URI = 'http://localhost/gitlab-desk/oauth/callback'
-const LOGIN_PARTITION = 'persist:gitlab-login'
+export const LOGIN_PARTITION = 'persist:gitlab-login'
 
 interface TokenResponse {
   access_token: string

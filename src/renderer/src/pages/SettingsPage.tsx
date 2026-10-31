@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { App as AntApp, Button, Card, Descriptions, Form, InputNumber, Popconfirm, Space, Switch } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMe } from '../api'
 import { authMethodText, platforms } from '../labels'
 import AiSettings from '../components/AiSettings'
+import ChangePasswordModal from '../components/ChangePasswordModal'
 import GitSshSettings from '../components/GitSshSettings'
 import type { ConfigPatch } from '../../../shared/types'
 
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
   const me = useMe()
   const c = cfg.data
+  const [changingPassword, setChangingPassword] = useState(false)
 
   useEffect(() => {
     if (c) form.setFieldsValue({ ignoreTls: c.ignoreTls, notify: c.notify, pollMinutes: c.pollMinutes })
@@ -36,9 +38,14 @@ export default function SettingsPage() {
       <Card
         title="当前账号"
         extra={
-          <Popconfirm title="确定退出登录？" description="会清除本机保存的登录令牌" onConfirm={logout}>
-            <Button danger>退出登录 / 切换账号</Button>
-          </Popconfirm>
+          <Space>
+            <Button onClick={() => setChangingPassword(true)} disabled={!me.data}>
+              修改密码
+            </Button>
+            <Popconfirm title="确定退出登录？" description="会清除本机保存的登录令牌" onConfirm={logout}>
+              <Button danger>退出登录 / 切换账号</Button>
+            </Popconfirm>
+          </Space>
         }
       >
         <Descriptions column={1} bordered size="small">
@@ -50,6 +57,7 @@ export default function SettingsPage() {
           <Descriptions.Item label="用户">{me.data ? `${me.data.name}（${me.data.username}）` : '-'}</Descriptions.Item>
           <Descriptions.Item label="登录方式">{c?.authMethod ? authMethodText[c.authMethod] : '-'}</Descriptions.Item>
         </Descriptions>
+        {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} />}
       </Card>
 
       <Card title="偏好设置">

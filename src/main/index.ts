@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { getConfig, saveConfig } from './config'
 import { gitlabRequest } from './gitlab'
 import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
+import { openPasswordPage } from './password'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
 import { cancelChat, listModels, streamChat, testAi } from './ai'
 import { registerGitIpc } from './git'
@@ -84,6 +85,7 @@ if (!app.requestSingleInstanceLock()) {
       afterLogin(await loginWithPassword(username, password))
     )
     ipcMain.handle('auth:web', async () => afterLogin(await loginWithWeb(win)))
+    ipcMain.handle('auth:password-page', () => openPasswordPage(win))
     ipcMain.handle('auth:redirect-uri', () => OAUTH_REDIRECT_URI)
     ipcMain.handle('auth:logout', async () => {
       await logout()
