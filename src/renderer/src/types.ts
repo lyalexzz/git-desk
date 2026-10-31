@@ -182,3 +182,51 @@ export interface Diff {
   deleted_file: boolean
   renamed_file: boolean
 }
+
+export interface ProjectSettingsInfo extends Project {
+  merge_method?: 'merge' | 'rebase_merge' | 'ff'
+  squash_option?: 'never' | 'always' | 'default_on' | 'default_off'
+  only_allow_merge_if_pipeline_succeeds?: boolean
+  allow_merge_on_skipped_pipeline?: boolean
+  only_allow_merge_if_all_discussions_are_resolved?: boolean
+  remove_source_branch_after_merge?: boolean
+  approvals_before_merge?: number
+  permissions?: {
+    project_access?: { access_level: number } | null
+    group_access?: { access_level: number } | null
+  }
+}
+
+export interface ProtectedAccessLevel {
+  id?: number
+  access_level: number | null
+  access_level_description: string
+  user_id?: number | null
+  group_id?: number | null
+  deploy_key_id?: number | null
+}
+
+export interface ProtectedBranch {
+  id: number
+  name: string
+  push_access_levels: ProtectedAccessLevel[]
+  merge_access_levels: ProtectedAccessLevel[]
+  allow_force_push: boolean
+}
+
+export interface ProtectedTag {
+  name: string
+  create_access_levels: ProtectedAccessLevel[]
+}
+
+export interface CiVariable {
+  key: string
+  value: string | null
+  variable_type: 'env_var' | 'file'
+  protected: boolean
+  masked: boolean
+  hidden?: boolean
+  raw?: boolean
+  environment_scope: string
+  description?: string | null
+}

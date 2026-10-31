@@ -107,6 +107,14 @@ export const accessLevels: { value: number; label: string }[] = [
   { value: 50, label: '所有者 Owner' }
 ]
 
+/** 受保护分支/标签可选的角色（GitLab 只接受这几个值） */
+export const protectLevels: { value: number; label: string }[] = [
+  { value: 30, label: '开发者和维护者' },
+  { value: 40, label: '仅维护者' },
+  { value: 60, label: '仅管理员' },
+  { value: 0, label: '不允许任何人' }
+]
+
 function renderTag(map: Record<string, TagInfo>, value?: string) {
   if (!value) return null
   const [text, color] = map[value] ?? [value, 'default']

@@ -31,6 +31,7 @@ import { TimeAgo, visibilityText } from '../labels'
 import CodeView from '../components/CodeView'
 import DiffList from '../components/DiffList'
 import Markdown from '../components/Markdown'
+import ProjectSettings from '../components/ProjectSettings'
 import type { Branch, Commit, Diff, Project, RepoFile, RepoTag, TreeItem } from '../types'
 
 type Update = (patch: Record<string, string | undefined>) => void
@@ -848,7 +849,8 @@ export default function ProjectDetailPage() {
               { key: 'code', label: '代码', children: <CodeTab project={p} refName={refName} path={path} type={type} update={update} /> },
               { key: 'commits', label: '提交记录', children: <CommitsTab projectId={p.id} refName={refName} path={path} update={update} /> },
               { key: 'branches', label: '分支', children: <BranchesTab project={p} refName={refName} update={update} /> },
-              { key: 'tags', label: '标签', children: <TagsTab projectId={p.id} update={update} /> }
+              { key: 'tags', label: '标签', children: <TagsTab projectId={p.id} update={update} /> },
+              { key: 'settings', label: '设置', children: <ProjectSettings project={p} /> }
             ]}
           />
         )}

@@ -34,7 +34,7 @@ export type LoginResult = { ok: true; user: { name: string; username: string } }
 export type QueryValue = string | number | boolean | undefined | null
 
 export interface ApiRequest {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   path: string
   query?: Record<string, QueryValue>
   body?: unknown
