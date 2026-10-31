@@ -3,6 +3,22 @@ body,
 #root {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+}
+
+.no-scrollbar {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.login-wrapper {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 40px 16px;
 }
 
 .app-logo {

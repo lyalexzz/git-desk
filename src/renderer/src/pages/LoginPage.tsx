@@ -85,8 +85,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: '40px auto', padding: '0 16px' }}>
-      <Card title={`登录 ${productName}`}>
+    <div className="login-wrapper no-scrollbar">
+      <Card title={`登录 ${productName}`} style={{ maxWidth: 640, margin: '0 auto' }}>
         <Form form={server} layout="vertical" requiredMark={false} initialValues={{ platform: 'gitlab', ignoreTls: false }}>
           <Form.Item label="平台" name="platform">
             <Select options={platforms} onChange={onPlatformChange} />

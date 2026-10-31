@@ -95,7 +95,7 @@ function MainLayout({ config }: { config: AppConfig }) {
             )}
           </span>
         </Header>
-        <Content style={{ padding: 16, overflow: 'auto', background: '#f5f5f5' }}>
+        <Content className="no-scrollbar" style={{ padding: 16, background: '#f5f5f5' }}>
           {me.error && !authFailed && (
             <Alert type="error" showIcon style={{ marginBottom: 16 }} message={`无法连接 GitLab：${(me.error as Error).message}`} />
           )}
