@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   App as AntApp,
-  AutoComplete,
   Button,
   Card,
   Form,
@@ -67,6 +66,53 @@ function presetOf(baseUrl: string): string {
 
 type FormValues = Required<Omit<AiPatch, 'clearApiKey'>>
 
+/** 可搜索的模型下拉框；输入列表里没有的名称时提供“使用自定义模型”选项 */
+function ModelSelect({
+  value,
+  onChange,
+  models,
+  open,
+  onOpenChange
+}: {
+  value?: string
+  onChange?: (v: string) => void
+  models: string[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [search, setSearch] = useState('')
+  const options = useMemo(() => {
+    const list = value && !models.includes(value) ? [value, ...models] : models
+    const opts = list.map((m) => ({ value: m, label: m }))
+    const s = search.trim()
+    if (s && !list.includes(s)) opts.unshift({ value: s, label: `使用自定义模型：${s}` })
+    return opts
+  }, [models, value, search])
+
+  return (
+    <Select
+      showSearch
+      value={value || undefined}
+      onChange={(v) => {
+        onChange?.(v)
+        setSearch('')
+      }}
+      onSearch={setSearch}
+      searchValue={search}
+      open={open}
+      onDropdownVisibleChange={(o) => {
+        onOpenChange(o)
+        if (!o) setSearch('')
+      }}
+      options={options}
+      filterOption={(input, o) => String(o?.value ?? '').toLowerCase().includes(input.trim().toLowerCase())}
+      placeholder="先点击「拉取模型」，也可以直接输入模型名称"
+      notFoundContent="没有模型，可直接输入名称"
+      style={{ flex: 1, minWidth: 0 }}
+    />
+  )
+}
+
 export default function AiSettings() {
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
@@ -94,10 +140,8 @@ export default function AiSettings() {
   }, [ai, form])
 
   const current = presets.find((p) => p.value === preset)
-  const modelOptions = useMemo(
-    () => [...new Set([...models, ...(current?.models ?? [])])].map((m) => ({ value: m })),
-    [models, current]
-  )
+  const [modelOpen, setModelOpen] = useState(false)
+  const modelList = useMemo(() => [...new Set([...models, ...(current?.models ?? [])])], [models, current])
 
   const connection = (): AiConnection => {
     const v = form.getFieldsValue()
@@ -126,7 +170,10 @@ export default function AiSettings() {
         message.info(`API 地址已自动补全为 ${r.data.baseUrl}`)
       }
       if (r.data.models.length === 0) message.warning('服务商没有返回任何模型，请手动填写模型名称')
-      else message.success(`已拉取 ${r.data.models.length} 个模型`)
+      else {
+        message.success(`已拉取 ${r.data.models.length} 个模型`)
+        setModelOpen(true)
+      }
     } finally {
       setLoadingModels(false)
     }
@@ -183,15 +230,10 @@ export default function AiSettings() {
             </Button>
           </Popconfirm>
         )}
-        <Form.Item label="模型" required>
+        <Form.Item label="模型" required extra={models.length ? `已拉取 ${models.length} 个模型，可输入关键字搜索` : undefined}>
           <Space.Compact style={{ width: '100%' }}>
             <Form.Item name="model" noStyle rules={[{ required: true, message: '请选择或填写模型' }]}>
-              <AutoComplete
-                options={modelOptions}
-                placeholder="先点击「拉取模型」，也可以直接输入模型名称"
-                filterOption={(input, o) => String(o?.value ?? '').toLowerCase().includes(input.toLowerCase())}
-                style={{ flex: 1 }}
-              />
+              <ModelSelect models={modelList} open={modelOpen} onOpenChange={setModelOpen} />
             </Form.Item>
             <Button loading={loadingModels} onClick={fetchModels}>
               拉取模型

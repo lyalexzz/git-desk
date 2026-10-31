@@ -107,6 +107,28 @@ function readText(res: IncomingMessage): Promise<string> {
   })
 }
 
+/** 兼容 {data:[{id}]}（OpenAI/Ollama）、{models:[{name}]}、{data:{models:[]}} 以及字符串数组 */
+export function modelIds(data: unknown): string[] | null {
+  const pick = (v: unknown): unknown[] | null => {
+    if (Array.isArray(v)) return v
+    if (!v || typeof v !== 'object') return null
+    const d = v as Record<string, unknown>
+    return pick(d.data) ?? pick(d.models) ?? pick(d.list)
+  }
+  const items = pick(data)
+  if (!items) return null
+  const ids = items
+    .map((m) => {
+      if (typeof m === 'string') return m
+      if (!m || typeof m !== 'object') return ''
+      const o = m as Record<string, unknown>
+      const id = o.id ?? o.model ?? o.name
+      return typeof id === 'string' ? id.trim() : ''
+    })
+    .filter(Boolean)
+  return [...new Set(ids)].sort()
+}
+
 export async function listModels(conn: AiConnection): Promise<AiResult<{ models: string[]; baseUrl: string }>> {
   try {
     const r = resolve(conn)
@@ -121,16 +143,8 @@ export async function listModels(conn: AiConnection): Promise<AiResult<{ models:
       } catch {
         data = null
       }
-      if (res.status < 400 && data && typeof data === 'object') {
-        const d = data as { data?: unknown; models?: unknown }
-        const items = Array.isArray(d.data) ? d.data : Array.isArray(d.models) ? d.models : null
-        if (items) {
-          const ids = items
-            .map((m) => (typeof m === 'string' ? m : ((m as { id?: string; name?: string }).id ?? (m as { name?: string }).name)))
-            .filter((id): id is string => Boolean(id))
-          return { ok: true, data: { models: [...new Set(ids)].sort(), baseUrl: base } }
-        }
-      }
+      const ids = res.status < 400 ? modelIds(data) : null
+      if (ids) return { ok: true, data: { models: ids, baseUrl: base } }
       lastError =
         res.status >= 400
           ? statusError(res.status, res.text)
