@@ -44,7 +44,7 @@ export function startNotifier(getWin: () => BrowserWindow | null): void {
 
   const tick = async (): Promise<void> => {
     const cfg = getConfig()
-    if (!cfg.baseUrl || !cfg.hasToken) return
+    if (!cfg.baseUrl || !cfg.loggedIn) return
     const res = await gitlabRequest<Todo[]>({ path: '/todos', query: { state: 'pending', per_page: 50 } })
     if (!res.ok) return
 

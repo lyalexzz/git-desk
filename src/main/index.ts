@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { clearToken, getConfig, saveConfig } from './config'
+import { getConfig, saveConfig } from './config'
 import { gitlabRequest } from './gitlab'
+import { OAUTH_REDIRECT_URI, loginWithPassword, loginWithToken, loginWithWeb, logout } from './auth'
 import { resetNotifier, startNotifier, stopNotifier } from './notifier'
-import type { ApiRequest, SaveConfigInput } from '../shared/types'
+import type { ApiRequest, ConfigPatch, LoginResult } from '../shared/types'
 
 let win: BrowserWindow | null = null
 
@@ -56,14 +57,27 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.gitlabdesk.app')
 
     ipcMain.handle('config:get', () => getConfig())
-    ipcMain.handle('config:save', (_e, input: SaveConfigInput) => {
-      const cfg = saveConfig(input)
-      resetNotifier()
+    ipcMain.handle('config:save', (_e, patch: ConfigPatch) => {
+      const cfg = saveConfig(patch)
       startNotifier(() => win)
       return cfg
     })
-    ipcMain.handle('config:logout', () => {
-      clearToken()
+
+    const afterLogin = (r: LoginResult): LoginResult => {
+      if (r.ok) {
+        resetNotifier()
+        startNotifier(() => win)
+      }
+      return r
+    }
+    ipcMain.handle('auth:token', async (_e, token: string) => afterLogin(await loginWithToken(token)))
+    ipcMain.handle('auth:password', async (_e, username: string, password: string) =>
+      afterLogin(await loginWithPassword(username, password))
+    )
+    ipcMain.handle('auth:web', async () => afterLogin(await loginWithWeb(win)))
+    ipcMain.handle('auth:redirect-uri', () => OAUTH_REDIRECT_URI)
+    ipcMain.handle('auth:logout', async () => {
+      await logout()
       stopNotifier()
       resetNotifier()
       return getConfig()

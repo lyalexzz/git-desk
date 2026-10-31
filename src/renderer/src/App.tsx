@@ -21,10 +21,13 @@ import IssuesPage from './pages/IssuesPage'
 import PipelinesPage from './pages/PipelinesPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
+import LoginPage from './pages/LoginPage'
+import { authMethodText } from './labels'
+import type { AppConfig } from '../../shared/types'
 
 const { Sider, Header, Content } = Layout
 
-function MainLayout({ baseUrl }: { baseUrl: string }) {
+function MainLayout({ config }: { config: AppConfig }) {
   const navigate = useNavigate()
   const location = useLocation()
   const me = useMe()
@@ -36,12 +39,14 @@ function MainLayout({ baseUrl }: { baseUrl: string }) {
   const selected = '/' + (location.pathname.split('/')[1] ?? '')
   const authFailed = me.error instanceof ApiError && me.error.status === 401
 
-  if (authFailed) return <SettingsPage firstRun />
+  if (authFailed) return <LoginPage />
+
+  const productName = config.isJihu ? '极狐 GitLab' : 'GitLab'
 
   return (
     <Layout style={{ height: '100vh' }}>
       <Sider theme="light" width={200} style={{ borderRight: '1px solid #f0f0f0' }}>
-        <div className="app-logo">GitLab 桌面版</div>
+        <div className="app-logo">{productName} 桌面版</div>
         <Menu
           mode="inline"
           selectedKeys={[selected]}
@@ -79,8 +84,16 @@ function MainLayout({ baseUrl }: { baseUrl: string }) {
             alignItems: 'center'
           }}
         >
-          <Typography.Text type="secondary">{baseUrl}</Typography.Text>
-          <span>{me.data ? `${me.data.name}（${me.data.username}）${me.data.is_admin ? ' · 管理员' : ''}` : ''}</span>
+          <Typography.Text type="secondary">
+            {config.baseUrl}
+            {config.serverVersion && ` · ${productName} ${config.serverVersion}`}
+          </Typography.Text>
+          <span>
+            {me.data ? `${me.data.name}（${me.data.username}）${me.data.is_admin ? ' · 管理员' : ''}` : ''}
+            {config.authMethod && (
+              <Typography.Text type="secondary"> · {authMethodText[config.authMethod]}</Typography.Text>
+            )}
+          </span>
         </Header>
         <Content style={{ padding: 16, overflow: 'auto', background: '#f5f5f5' }}>
           {me.error && !authFailed && (
@@ -107,6 +120,6 @@ export default function App() {
   const cfg = useQuery({ queryKey: ['config'], queryFn: () => window.desktop.getConfig() })
 
   if (cfg.isLoading) return <Spin style={{ marginTop: 200, width: '100%' }} />
-  if (!cfg.data?.baseUrl || !cfg.data.hasToken) return <SettingsPage firstRun />
-  return <MainLayout baseUrl={cfg.data.baseUrl} />
+  if (!cfg.data?.baseUrl || !cfg.data.loggedIn) return <LoginPage />
+  return <MainLayout config={cfg.data} />
 }

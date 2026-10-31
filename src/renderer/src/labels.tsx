@@ -1,5 +1,19 @@
 import { Tag, Tooltip } from 'antd'
 import dayjs from 'dayjs'
+import type { AuthMethod, Platform } from '../../shared/types'
+
+export const platforms: { value: Platform; label: string; url?: string }[] = [
+  { value: 'gitlab', label: 'GitLab 私有部署' },
+  { value: 'jihu', label: '极狐 GitLab 私有部署' },
+  { value: 'jihulab', label: '极狐 GitLab SaaS（jihulab.com）', url: 'https://jihulab.com' },
+  { value: 'gitlab_com', label: 'GitLab.com', url: 'https://gitlab.com' }
+]
+
+export const authMethodText: Record<AuthMethod, string> = {
+  token: '个人访问令牌',
+  password: '账号密码',
+  web: '网页登录'
+}
 
 type TagInfo = [text: string, color: string]
 

@@ -9,8 +9,12 @@ function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
 
 const api: DesktopApi = {
   getConfig: () => ipcRenderer.invoke('config:get'),
-  saveConfig: (input) => ipcRenderer.invoke('config:save', input),
-  logout: () => ipcRenderer.invoke('config:logout'),
+  saveConfig: (patch) => ipcRenderer.invoke('config:save', patch),
+  loginWithToken: (token) => ipcRenderer.invoke('auth:token', token),
+  loginWithPassword: (username, password) => ipcRenderer.invoke('auth:password', username, password),
+  loginWithWeb: () => ipcRenderer.invoke('auth:web'),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  oauthRedirectUri: () => ipcRenderer.invoke('auth:redirect-uri'),
   request: (req) => ipcRenderer.invoke('api:request', req),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   onNavigate: (cb) => subscribe('navigate', cb),
