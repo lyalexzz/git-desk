@@ -20,6 +20,8 @@ win:
   icon: build/icon.ico
   executableName: gitlab-desk
   artifactName: gitlab-desk-${version}-setup.${ext}
+  # 未做代码签名；关闭可避免 winCodeSign 在无管理员/符号链接权限的 Windows 上解压失败
+  signAndEditExecutable: false
   target:
     - nsis
 nsis:
